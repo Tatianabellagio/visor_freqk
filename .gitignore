@@ -1,0 +1,56 @@
+############################
+# Ignore everything by default
+############################
+*
+
+# Allow directories so git can traverse into them
+!*/
+
+# Always keep git control files
+!.gitignore
+
+############################
+# ✅ Keep code + configs
+############################
+
+# Python / notebooks
+!*.py
+!*.ipynb
+
+# Shell
+!*.sh
+!*.bash
+!*.zsh
+
+# R
+!*.R
+!*.r
+
+# Workflow / pipelines
+!Snakefile
+!*.smk
+!*.nf
+!nextflow.config
+
+# Configs / metadata
+!*.yml
+!*.yaml
+!*.json
+!*.toml
+!*.ini
+!*.cfg
+!*.config
+
+# Docs
+!*.md
+#!*.txt
+
+############################
+# Jupyter noise (still ignore)
+############################
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Ignore .claude directory
+.claude/
+/repo_visor/
