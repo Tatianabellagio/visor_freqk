@@ -57,6 +57,7 @@ import itertools
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # ── Fixed paths (adjust if the project moves) ─────────────────────────────────
@@ -175,6 +176,10 @@ def parse_args():
                    help="k-mer size for freqk (default: 31)")
     p.add_argument("--positions",  nargs="+", type=int,
                    help="0-based SV start positions on CHROM (default: 10000000)")
+    p.add_argument("--stagger-secs", default=30, type=int,
+                   help="Seconds to wait between successive pipeline submissions (default: 30). "
+                        "Prevents jobs that share the same position from racing to build "
+                        "apply_vcf/make_beds outputs simultaneously.")
     p.add_argument("--dry-run",    action="store_true",
                    help="Print config and command but do not submit")
     return p.parse_args()
@@ -198,7 +203,13 @@ def main():
     err_label = format_error_label(args.error_rate)
     pipeline  = scripts_dir / "run_pipeline_var.sh"
 
-    combinations = list(itertools.product(coverages, sv_freqs, positions))
+    # Sort: position first so all jobs sharing the same pos/apply_vcf/make_beds
+    # submit consecutively — maximises the chance that shared early steps are
+    # already done (or running) by the time the second job for that position starts.
+    combinations = sorted(
+        itertools.product(coverages, sv_freqs, positions),
+        key=lambda x: (x[2], x[0], x[1]),   # pos → cov → freq
+    )
     total = len(combinations)
 
     print(f"\nLaunching {total} pipeline run(s):")
@@ -208,6 +219,8 @@ def main():
     print(f"  Sizes      : {list(sizes.keys())}")
     print(f"  N samples  : {args.n_samples}")
     print(f"  Error rate : {args.error_rate}  K={args.k}")
+    if not args.dry_run:
+        print(f"  Stagger    : {args.stagger_secs}s between submissions")
     print()
 
     for i, (cov, freq, pos) in enumerate(combinations, 1):
@@ -263,6 +276,10 @@ def main():
                 print(f"  ERROR: pipeline returned {result.returncode}, aborting.")
                 sys.exit(result.returncode)
             print()
+            if i < total and args.stagger_secs > 0:
+                print(f"  Waiting {args.stagger_secs}s before next submission "
+                      f"(use --stagger-secs 0 to disable)...")
+                time.sleep(args.stagger_secs)
 
     if not args.dry_run:
         print(f"\nAll {total} pipeline(s) submitted.")

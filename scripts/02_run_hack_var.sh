@@ -38,7 +38,7 @@ _N_SV=$(python3 -c "print(round(${N_SAMPLES} * ${SV_FREQ}))")
 _N_SIZES=${#DEL_SIZES[@]}
 _N_HAP_EXPECTED=$((_N_SV * _N_SIZES))
 _N_HAP_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" \
-                    -path "*_sv_del_*" -size +0c 2>/dev/null | wc -l)
+                    -path "*_sv_del_*" -size +0c 2>/dev/null | wc -l) || _N_HAP_EXISTING=0
 if [[ "${_N_HAP_EXPECTED}" -gt 0 && "${_N_HAP_EXISTING}" -ge "${_N_HAP_EXPECTED}" ]]; then
   echo "[$(date)] Skipping 02_run_hack_var — all ${_N_HAP_EXPECTED} SV haplotypes already exist in ${HAPS_VAR}"
   echo "[$(date)] To force regeneration: rm -rf ${HAPS_VAR}/*_sv_del_*"
