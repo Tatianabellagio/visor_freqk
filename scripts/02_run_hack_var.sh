@@ -24,12 +24,29 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p logs "${HAPS_VAR}"
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all SV haplotypes (N_SV × N_SIZES) already exist, skip.
+# Runs before conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+_N_SV=$(python3 -c "print(round(${N_SAMPLES} * ${SV_FREQ}))")
+_N_SIZES=${#DEL_SIZES[@]}
+_N_HAP_EXPECTED=$((_N_SV * _N_SIZES))
+_N_HAP_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" \
+                    -path "*_sv_del_*" -size +0c 2>/dev/null | wc -l)
+if [[ "${_N_HAP_EXPECTED}" -gt 0 && "${_N_HAP_EXISTING}" -ge "${_N_HAP_EXPECTED}" ]]; then
+  echo "[$(date)] Skipping 02_run_hack_var — all ${_N_HAP_EXPECTED} SV haplotypes already exist in ${HAPS_VAR}"
+  echo "[$(date)] To force regeneration: rm -rf ${HAPS_VAR}/*_sv_del_*"
+  exit 0
+fi
+echo "[$(date)] Found ${_N_HAP_EXISTING}/${_N_HAP_EXPECTED} SV haplotypes — building missing ones."
+
+source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 # ---------------------------------------------------------------------------
 # Helpers (same as 02_run_hack.sh)

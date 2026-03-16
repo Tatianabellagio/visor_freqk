@@ -26,12 +26,34 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p logs "${BEDS}"
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all read sets already exist, skip conda + SHORtS.
+# Runs before conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+_FL=$(python3 -c "print(round(${SV_FREQ}*100))")
+_EL=$(python3 -c "e='${ERROR_RATE}'; print('0' if float(e)==0 else (e.split('.')[-1] if '.' in e else e))")
+_RTAG="n${N_SAMPLES}_f${_FL}_err${_EL}"
+_N_READS_DONE=0; _N_READS_TOTAL=0
+for _SZ in "${!DEL_SIZES[@]}"; do
+  _N_READS_TOTAL=$((_N_READS_TOTAL + 1))
+  _OUTD="${READS_VAR}/cov${COVERAGE}/var_del_${_SZ}_${_RTAG}"
+  [[ -s "${_OUTD}/r1.fq" && -s "${_OUTD}/r2.fq" ]] && _N_READS_DONE=$((_N_READS_DONE + 1))
+done
+if [[ "${_N_READS_TOTAL}" -gt 0 && "${_N_READS_DONE}" -ge "${_N_READS_TOTAL}" ]]; then
+  echo "[$(date)] Skipping 03_run_shorts_var — all ${_N_READS_TOTAL} read sets already exist"
+  echo "[$(date)] RUN_TAG=${_RTAG}  READS_VAR=${READS_VAR}/cov${COVERAGE}/"
+  echo "[$(date)] To force regeneration, remove the read directories."
+  exit 0
+fi
+echo "[$(date)] Found ${_N_READS_DONE}/${_N_READS_TOTAL} read sets — building missing ones."
+
+source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 # ---------------------------------------------------------------------------
 # Sample list and SV assignments (must match 02_run_hack_var.sh)
@@ -116,7 +138,12 @@ else: print(e.split('.')[-1] if '.' in e else e)
 ")
       RUN_TAG="n${N_SAMPLES}_f${FREQ_LABEL}_err${ERR_LABEL}"
       OUT="${READS_VAR}/cov${COVERAGE}/var_del_${SIZE}_${RUN_TAG}"
-      rm -rf "${OUT}"
+
+      if [[ -s "${OUT}/r1.fq" && -s "${OUT}/r2.fq" ]]; then
+        echo "[$(date)] Skipping SHORtS DEL ${SIZE} — reads already exist in ${OUT}"
+        continue
+      fi
+
       mkdir -p "${OUT}"
 
       echo "[$(date)] Running VISOR SHORtS: ${N_CLONES} clones, DEL ${SIZE}, cov=${COVERAGE}x"

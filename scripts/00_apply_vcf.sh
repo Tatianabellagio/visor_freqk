@@ -25,12 +25,25 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p logs "${HAPS_VAR}"
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all N_SAMPLES FASTAs already exist, nothing to do.
+# This check runs BEFORE conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+N_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" -s 2>/dev/null | wc -l)
+if [[ "${N_EXISTING}" -ge "${N_SAMPLES}" ]]; then
+  echo "[$(date)] Skipping 00_apply_vcf — all ${N_SAMPLES} haplotype FASTAs already exist in ${HAPS_VAR}"
+  echo "[$(date)] To force regeneration, remove the directory: rm -rf ${HAPS_VAR}"
+  exit 0
+fi
+echo "[$(date)] Found ${N_EXISTING}/${N_SAMPLES} haplotypes — building missing ones."
+
+source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 # ---------------------------------------------------------------------------
 # Guard: renamed VCF must exist

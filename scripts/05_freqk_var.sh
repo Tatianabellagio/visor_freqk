@@ -20,13 +20,34 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-eval "$(conda shell.bash hook)"
-conda activate freqk_build
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p "${RESULTS}"
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all allele-frequency files already exist, nothing to do.
+# Runs before conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+_FL=$(python3 -c "print(round(${SV_FREQ}*100))")
+_EL=$(python3 -c "e='${ERROR_RATE}'; print('0' if float(e)==0 else (e.split('.')[-1] if '.' in e else e))")
+_RTAG="n${N_SAMPLES}_f${_FL}_err${_EL}"
+_N_AF_DONE=0; _N_AF_TOTAL=0
+for _SZ in "${!DEL_SIZES[@]}"; do
+  _N_AF_TOTAL=$((_N_AF_TOTAL + 1))
+  _BDIR="${RESULTS}/cov${COVERAGE}_err${_EL}/${SV_TYPE}/${_SZ}/n${N_SAMPLES}/f${_FL}/k${K}"
+  _AF="${_BDIR}/var_del_${_SZ}_${_RTAG}.allele_frequencies.k${K}.tsv"
+  [[ -s "${_AF}" ]] && _N_AF_DONE=$((_N_AF_DONE + 1))
+done
+if [[ "${_N_AF_TOTAL}" -gt 0 && "${_N_AF_DONE}" -ge "${_N_AF_TOTAL}" ]]; then
+  echo "[$(date)] Skipping 05_freqk_var — all ${_N_AF_TOTAL} allele-frequency files already exist"
+  exit 0
+fi
+echo "[$(date)] Found ${_N_AF_DONE}/${_N_AF_TOTAL} allele-frequency files — running missing ones."
+
+eval "$(conda shell.bash hook)"
+conda activate freqk_build
 
 # ---------------------------------------------------------------------------
 # Build label components  (must mirror 03_run_shorts_var.sh exactly)
@@ -80,6 +101,11 @@ case "${SV_TYPE}" in
       echo "     VCF:      ${VCF}"
       echo "     READS:    ${READS_DIR}"
       echo "     RESULTS:  ${BASE_DIR}"
+
+      if [[ -s "${AF_OUT}" ]]; then
+        echo "[$(date)] Skipping DEL ${SIZE} — allele-frequency file already exists: ${AF_OUT}"
+        continue
+      fi
 
       # Preflight checks
       [[ -s "${REF}" && -s "${REF}.fai" ]] \

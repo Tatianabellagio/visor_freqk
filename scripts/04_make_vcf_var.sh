@@ -15,12 +15,36 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p "${VCF_DIR}" logs
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all VCFs already exist, nothing to do.
+# Runs before conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+_N_VCF_DONE=0; _N_VCF_TOTAL=0
+case "${SV_TYPE}" in
+  "DEL") for _SZ in "${!DEL_SIZES[@]}"; do
+           _N_VCF_TOTAL=$((_N_VCF_TOTAL+1))
+           [[ -s "${VCF_DIR}/del_${_SZ}.vcf.gz" && -s "${VCF_DIR}/del_${_SZ}.vcf.gz.tbi" ]] \
+             && _N_VCF_DONE=$((_N_VCF_DONE+1))
+         done ;;
+  "INS") for _SZ in "${!INS_SIZES[@]}"; do
+           _N_VCF_TOTAL=$((_N_VCF_TOTAL+1))
+           [[ -s "${VCF_DIR}/ins_${_SZ}.vcf.gz" && -s "${VCF_DIR}/ins_${_SZ}.vcf.gz.tbi" ]] \
+             && _N_VCF_DONE=$((_N_VCF_DONE+1))
+         done ;;
+esac
+if [[ "${_N_VCF_TOTAL}" -gt 0 && "${_N_VCF_DONE}" -ge "${_N_VCF_TOTAL}" ]]; then
+  echo "[$(date)] Skipping 04_make_vcf_var — all ${_N_VCF_TOTAL} VCFs already exist in ${VCF_DIR}"
+  exit 0
+fi
+echo "[$(date)] Found ${_N_VCF_DONE}/${_N_VCF_TOTAL} VCFs — building missing ones."
+
+source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 case "${SV_TYPE}" in
   "DEL")
@@ -33,6 +57,11 @@ case "${SV_TYPE}" in
 
       VCF_RAW="${VCF_DIR}/del_${SIZE}.vcf"
       VCF_GZ="${VCF_DIR}/del_${SIZE}.vcf.gz"
+
+      if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
+        echo "[$(date)] Reusing existing VCF for DEL ${SIZE}: ${VCF_GZ}"
+        continue
+      fi
 
       echo "[$(date)] Building DEL VCF for ${SIZE}: POS=${POS}, DEL_END=${DEL_END}, SVLEN=${SVLEN}"
 
@@ -70,6 +99,11 @@ VCFEOF
 
       VCF_RAW="${VCF_DIR}/ins_${SIZE}.vcf"
       VCF_GZ="${VCF_DIR}/ins_${SIZE}.vcf.gz"
+
+      if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
+        echo "[$(date)] Reusing existing VCF for INS ${SIZE}: ${VCF_GZ}"
+        continue
+      fi
 
       echo "[$(date)] Building INS VCF for ${SIZE}: POS=${POS}, SVLEN=${SVLEN}"
 

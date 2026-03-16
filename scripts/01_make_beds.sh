@@ -16,12 +16,34 @@
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_deletions.sh"}
 source "${CONFIG_FILE}"
 
 mkdir -p "${BEDS}" logs
+
+# ---------------------------------------------------------------------------
+# Fast early-exit: if all BED files already exist, nothing to do.
+# Runs before conda activation to avoid unnecessary overhead.
+# ---------------------------------------------------------------------------
+_N_BED_DONE=0; _N_BED_TOTAL=0
+case "${SV_TYPE}" in
+  "DEL") for _S in "${!DEL_SIZES[@]}"; do
+           _N_BED_TOTAL=$((_N_BED_TOTAL+1))
+           [[ -s "${BEDS}/hack_del_${_S}.bed" ]] && _N_BED_DONE=$((_N_BED_DONE+1))
+         done ;;
+  "INS") for _S in "${!INS_SIZES[@]}"; do
+           _N_BED_TOTAL=$((_N_BED_TOTAL+1))
+           [[ -s "${BEDS}/hack_ins_${_S}.bed" ]] && _N_BED_DONE=$((_N_BED_DONE+1))
+         done ;;
+esac
+if [[ "${_N_BED_TOTAL}" -gt 0 && "${_N_BED_DONE}" -ge "${_N_BED_TOTAL}" ]]; then
+  echo "[$(date)] Skipping 01_make_beds — all ${_N_BED_TOTAL} BED files already exist in ${BEDS}"
+  exit 0
+fi
+echo "[$(date)] Found ${_N_BED_DONE}/${_N_BED_TOTAL} BED files — building missing ones."
+
+source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
 case "${SV_TYPE}" in
   "DEL")

@@ -159,10 +159,11 @@ def parse_args():
     )
     p.add_argument("--sv-type",    required=True, choices=["DEL"],
                    help="SV type (currently DEL only)")
-    p.add_argument("--coverage",   required=True, type=int,
-                   help="Sequencing coverage (e.g. 50)")
-    p.add_argument("--sv-freq",    required=True, type=float,
-                   help="Fraction of N_SAMPLES haplotypes carrying the SV (e.g. 0.50)")
+    p.add_argument("--coverage",   required=True, type=int, nargs="+",
+                   help="Sequencing coverage(s) — one or more integers (e.g. --coverage 10 20 50)")
+    p.add_argument("--sv-freq",    required=True, type=float, nargs="+",
+                   help="SV frequency/ies — fraction of N_SAMPLES haplotypes carrying the SV "
+                        "(e.g. --sv-freq 0.10 0.30 0.50)")
     p.add_argument("--n-samples",  required=True, type=int,
                    help="Number of ecotype haplotypes to draw from GrENET VCF (e.g. 10)")
     p.add_argument("--sizes",      nargs="+", default=["1kb"],
@@ -182,7 +183,9 @@ def parse_args():
 def main():
     args = parse_args()
 
-    positions = args.positions if args.positions else [SV_START_0_DEFAULT]
+    positions  = args.positions if args.positions else [SV_START_0_DEFAULT]
+    coverages  = args.coverage   # already a list
+    sv_freqs   = args.sv_freq    # already a list
 
     # Build size dict in a consistent order from the requested names
     all_sizes = ALL_DEL_SIZES if args.sv_type == "DEL" else ALL_INS_SIZES
@@ -192,17 +195,29 @@ def main():
     config_dir  = scripts_dir / "generated_configs"
     config_dir.mkdir(exist_ok=True)
 
-    err_label  = format_error_label(args.error_rate)
-    freq_label = int(round(args.sv_freq * 100))
-    pipeline   = scripts_dir / "run_pipeline_var.sh"
+    err_label = format_error_label(args.error_rate)
+    pipeline  = scripts_dir / "run_pipeline_var.sh"
 
-    for pos in positions:
-        pos_label = pos_label_from_pos(pos)
+    combinations = list(itertools.product(coverages, sv_freqs, positions))
+    total = len(combinations)
+
+    print(f"\nLaunching {total} pipeline run(s):")
+    print(f"  Coverages  : {coverages}")
+    print(f"  SV freqs   : {sv_freqs}")
+    print(f"  Positions  : {positions}")
+    print(f"  Sizes      : {list(sizes.keys())}")
+    print(f"  N samples  : {args.n_samples}")
+    print(f"  Error rate : {args.error_rate}  K={args.k}")
+    print()
+
+    for i, (cov, freq, pos) in enumerate(combinations, 1):
+        pos_label  = pos_label_from_pos(pos)
+        freq_label = int(round(freq * 100))
 
         config_text = generate_config(
             sv_type    = args.sv_type,
-            coverage   = args.coverage,
-            sv_freq    = args.sv_freq,
+            coverage   = cov,
+            sv_freq    = freq,
             n_samples  = args.n_samples,
             error_rate = args.error_rate,
             k          = args.k,
@@ -215,7 +230,7 @@ def main():
             f"config_var_{args.sv_type.lower()}"
             f"_n{args.n_samples}"
             f"_f{freq_label}"
-            f"_cov{args.coverage}"
+            f"_cov{cov}"
             f"_err{err_label}"
             f"_k{args.k}"
             f"_{pos_label}.sh"
@@ -225,29 +240,32 @@ def main():
         config_path.chmod(0o644)
 
         # ── Print summary ──────────────────────────────────────────────────
-        print("=" * 60)
+        print(f"[{i}/{total}] {'─'*54}")
         print(f"  SV type    : {args.sv_type}")
         print(f"  Sizes      : {', '.join(sizes.keys())}")
-        print(f"  Coverage   : {args.coverage}x")
-        print(f"  SV freq    : {args.sv_freq}  ({int(round(args.sv_freq * args.n_samples))}/{args.n_samples} haplotypes)")
+        print(f"  Coverage   : {cov}x")
+        print(f"  SV freq    : {freq}  ({int(round(freq * args.n_samples))}/{args.n_samples} haplotypes)")
         print(f"  N samples  : {args.n_samples}")
         print(f"  Error rate : {args.error_rate}")
         print(f"  K          : {args.k}")
         print(f"  Position   : {pos} ({pos_label})")
         print(f"  Config     : {config_path}")
-        print("=" * 60)
-        print(config_text)
 
         # ── Launch pipeline ────────────────────────────────────────────────
         cmd = ["bash", str(pipeline), str(config_path)]
-        print(f"Command: {' '.join(cmd)}")
+        print(f"  Command    : {' '.join(cmd)}")
 
         if args.dry_run:
-            print("\n[dry-run] Not submitting.")
+            print("  [dry-run] Not submitting.\n")
         else:
             result = subprocess.run(cmd)
             if result.returncode != 0:
+                print(f"  ERROR: pipeline returned {result.returncode}, aborting.")
                 sys.exit(result.returncode)
+            print()
+
+    if not args.dry_run:
+        print(f"\nAll {total} pipeline(s) submitted.")
 
 
 if __name__ == "__main__":
