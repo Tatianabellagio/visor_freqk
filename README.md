@@ -9,7 +9,7 @@ This README describes how to run the parameterised benchmark pipeline (deletions
 The recommended way to run experiments is via `launch_experiment.py`, which generates a config and submits the Slurm pipeline automatically.
 
 ```bash
-cd /home/tbellagio/scratch/pang/visor_freqk
+cd /home/tbellagio/scratch/visor_freqk
 
 # Single position (default: 10 Mb)
 python scripts/launch_experiment.py --sv-type DEL --coverage 50 --freq 0.50
@@ -222,3 +222,216 @@ results/del/
   pos10mb/cov50_err01/DEL/1kb/f50/k31/
   pos20mb/cov50_err01/DEL/1kb/f50/k31/
 ```
+
+---
+
+## Variation-aware pipeline (var)
+
+The variation-aware pipeline replaces the two synthetic haplotypes (SV + WT) with **N real ecotype haplotypes** drawn from the GrENET population VCF. This models realistic SNP background variation and allows freqk to be benchmarked under natural sequence diversity.
+
+### How it differs from the standard pipeline
+
+| Aspect | Standard pipeline | Variation-aware pipeline |
+|--------|------------------|--------------------------|
+| Haplotypes | 2 (one SV + one WT reference clone) | N ecotypes from GrENET VCF |
+| SNP background | None (clean reference) | Per-ecotype SNPs from `bcftools consensus` |
+| SV carriers | 1 clone (SV haplotype) | N_SV = round(N × SV_FREQ) randomly assigned |
+| SHORtS input | 2 clone dirs | N clone dirs at equal fractions (100/N each) |
+| VCF used by freqk | Deletion only | Deletion only (SNPs are baked into FASTAs, not in the freqk VCF) |
+
+### Prerequisites — one-time VCF setup
+
+The GrENET VCF uses chromosome names `"1"`, while the reference FASTA uses `"Chr1"`. Run `00_prep_vcf.sh` once to produce a renamed VCF used by all downstream steps:
+
+```bash
+sbatch scripts/00_prep_vcf.sh scripts/config_sv_var_deletions.sh
+```
+
+Produces: `data/reference/greneNet_final_v1.1.recode.Chr1.vcf.gz` (+ `.tbi`).
+This step is idempotent — it exits immediately if the renamed VCF already exists.
+
+---
+
+### Quick start — variation-aware launcher
+
+```bash
+cd /home/tbellagio/scratch/visor_freqk
+
+# Single position, 10 ecotypes, 50 % SV frequency, 1 kb deletion
+python scripts/launch_experiment_var.py \
+    --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10 \
+    --sizes 1kb --positions 10000000
+
+# Multiple SV sizes
+python scripts/launch_experiment_var.py \
+    --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10 \
+    --sizes 1kb 5kb 10kb --positions 10000000
+
+# Multiple positions (replicates at different genomic contexts)
+python scripts/launch_experiment_var.py \
+    --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10 \
+    --sizes 1kb --positions 10000000 20000000 30000000
+
+# Preview without submitting
+python scripts/launch_experiment_var.py \
+    --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10 \
+    --sizes 1kb --positions 10000000 --dry-run
+```
+
+The launcher:
+1. Generates one config file per position under `scripts/generated_configs/config_var_*.sh`.
+2. Calls `bash scripts/run_pipeline_var.sh <config>` for each position.
+3. Saves all Slurm job IDs to `logs/pipeline_var_<TIMESTAMP>.jobids` for timing queries.
+
+**Launcher arguments:**
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `--sv-type` | yes | — | `DEL` (INS not yet supported in var pipeline) |
+| `--coverage` | yes | — | Sequencing depth (e.g. `50`) |
+| `--sv-freq` | yes | — | Fraction of N_SAMPLES haplotypes carrying the SV (e.g. `0.50`) |
+| `--n-samples` | yes | — | Number of ecotypes drawn from the GrENET VCF (e.g. `10`) |
+| `--sizes` | no | `1kb` | One or more SV sizes: `100bp` `500bp` `1kb` `5kb` `10kb` |
+| `--positions` | no | `10000000` | One or more 0-based positions in bp |
+| `--error-rate` | no | `0.001` | Sequencing error rate |
+| `--k` | no | `31` | k-mer size for freqk |
+| `--dry-run` | no | off | Print config and command, do not submit |
+
+---
+
+### Variation-aware pipeline steps
+
+#### Step 00a — Rename VCF chromosomes (`00_prep_vcf.sh`)
+
+One-time step. Renames chromosomes in the GrENET VCF from `"1"` to `"Chr1"` to match the reference FASTA, and subsets to Chr1 only. Output: `RENAMED_VCF`. Idempotent.
+
+#### Step 00b — Apply VCF to produce per-ecotype FASTAs (`00_apply_vcf.sh`)
+
+Runs `bcftools consensus` on each of the N ecotype samples from `RENAMED_VCF`, producing one FASTA per ecotype:
+
+```
+data/haplotypes_var/del/<pos_label>/s_<sample>/h1.fa
+```
+
+Each FASTA is Chr1 with that ecotype's SNP background applied (`--haplotype 1`, appropriate for inbred Arabidopsis). Deletion coordinates remain valid because the GrENET VCF contains SNPs only (no indels → no coordinate shift).
+
+#### Step 01 — Make BEDs (`01_make_beds.sh`)
+
+Shared with the standard pipeline. Writes SV BED files to `data/beds/del/<pos_label>/`. Skipped if outputs already exist.
+
+#### Step 02 — VISOR HACk on SV carriers (`02_run_hack_var.sh`)
+
+Injects the deletion into N_SV = round(N × SV_FREQ) of the ecotype FASTAs:
+
+```
+data/haplotypes_var/del/<pos_label>/s_<sample>_sv_del_<SIZE>/h1.fa  ← SV clone
+data/haplotypes_var/del/<pos_label>/s_<sample>/h1.fa                ← WT clone (untouched)
+```
+
+SV carriers are always the first N_SV samples in VCF header order.
+
+#### Step 03 — Simulate pool-seq reads (`03_run_shorts_var.sh`)
+
+Pools all N clones via VISOR SHORtS at equal fractions (100/N each). SV clones come first in the clone list, then WT clones. Output:
+
+```
+data/reads_var/del/<pos_label>/cov<COV>/var_del_<SIZE>_n<N>_f<FREQ%>_err<ERR>/
+  r1.fq
+  r2.fq
+```
+
+Example: `data/reads_var/del/pos10mb/cov50/var_del_1kb_n10_f50_err001/`
+
+#### Step 04 — Build SV VCFs (`04_make_vcf_var.sh`)
+
+Creates sequence-resolved deletion VCFs in the `/var` subdirectory (separate from the standard pipeline, for future-proofing):
+
+```
+data/vcf/del/<pos_label>/var/del_<SIZE>.vcf.gz  (+.tbi)
+```
+
+Runs independently of steps 00–03 (no dependency on haplotypes or reads).
+
+#### Step 05 — Run freqk (`05_freqk_var.sh`)
+
+Same freqk steps as the standard pipeline (`index` → `var-dedup` → `ref-dedup` → `count` → `call`). Results go to the `/var` subdirectory:
+
+```
+results/del/<pos_label>/var/cov<COV>_err<ERR>/DEL/<SIZE>/n<N>/f<FREQ%>/k<K>/
+  var_del_<SIZE>_n<N>_f<FREQ%>_err<ERR>.allele_frequencies.k<K>.tsv  ← estimated AF
+  var_del_<SIZE>_n<N>_f<FREQ%>_err<ERR>.counts_by_allele.k<K>.tsv
+  var_del_<SIZE>_n<N>_f<FREQ%>_err<ERR>.raw_kmer_counts.k<K>.tsv
+  del_<SIZE>.k<K>.freqk.{index,var_index,ref_index}
+```
+
+The `n<N>` subdirectory ensures runs with different numbers of ecotypes (e.g. `--n-samples 10` vs `--n-samples 100`) are fully isolated and never overwrite each other.
+
+---
+
+### Variation-aware job chain
+
+```
+00_prep_vcf ──┬── 00_apply_vcf ──┐
+              └── 01_make_beds  ──┴── 02_run_hack_var ── 03_run_shorts_var ──┐
+04_make_vcf_var (no deps, starts immediately) ────────────────────────────────┴── 05_freqk_var
+```
+
+`04_make_vcf_var` only needs the reference FASTA so it runs in parallel with the haplotype chain, saving wall time.
+
+---
+
+### Checking pipeline timing
+
+After submitting via the launcher, job IDs are saved to `logs/pipeline_var_<TIMESTAMP>.jobids`. Once all jobs finish:
+
+```bash
+bash scripts/check_timing.sh
+# auto-selects the latest .jobids file, or pass explicitly:
+bash scripts/check_timing.sh logs/pipeline_var_20260316_143200.jobids
+```
+
+Reports elapsed time per step and total wall time (first job start → last job end).
+
+---
+
+### Full path example — variation-aware
+
+Running:
+
+```bash
+python scripts/launch_experiment_var.py \
+    --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10 \
+    --sizes 1kb --positions 10000000
+```
+
+produces:
+
+```
+data/
+  reference/
+    greneNet_final_v1.1.recode.Chr1.vcf.gz   ← renamed VCF (one-time)
+  haplotypes_var/del/pos10mb/
+    s_<ecotype_0>/h1.fa                       ← WT consensus (SNP background)
+    s_<ecotype_0>_sv_del_1kb/h1.fa            ← SV clone (deletion injected)
+    ...                                        ← (10 WT + 5 SV dirs)
+  reads_var/del/pos10mb/
+    cov50/var_del_1kb_n10_f50_err001/r1.fq r2.fq
+  vcf/del/pos10mb/var/
+    del_1kb.vcf.gz  (+.tbi)
+
+results/del/pos10mb/var/
+  cov50_err001/DEL/1kb/n10/f50/k31/
+    var_del_1kb_n10_f50_err001.allele_frequencies.k31.tsv
+```
+
+### Output path isolation
+
+The var pipeline uses entirely separate directory roots from the standard pipeline:
+
+| Data type | Standard pipeline | Variation-aware pipeline |
+|-----------|------------------|--------------------------|
+| Haplotypes | `data/haplotypes/` | `data/haplotypes_var/` |
+| Reads | `data/reads/` | `data/reads_var/` |
+| VCFs | `data/vcf/del/<pos>/` | `data/vcf/del/<pos>/var/` |
+| Results | `results/del/<pos>/` | `results/del/<pos>/var/` |
+| BEDs | `data/beds/del/<pos>/` | `data/beds/del/<pos>/` ← shared |

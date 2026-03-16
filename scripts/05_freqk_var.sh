@@ -58,8 +58,9 @@ case "${SV_TYPE}" in
 
       VCF=${VCF_DIR}/del_${SIZE}.vcf.gz
 
-      # results/cov<X>_err<E>/DEL/<SIZE>/f<F>/k<K>/
-      BASE_DIR=${RESULTS}/${COV_LABEL}_${ERR_LABEL_DIR}/${SV_TYPE}/${SIZE}/${FREQ_LABEL_DIR}/${K_LABEL}
+      # results/cov<X>_err<E>/DEL/<SIZE>/n<N>/f<F>/k<K>/
+      N_LABEL="n${N_SAMPLES}"
+      BASE_DIR=${RESULTS}/${COV_LABEL}_${ERR_LABEL_DIR}/${SV_TYPE}/${SIZE}/${N_LABEL}/${FREQ_LABEL_DIR}/${K_LABEL}
 
       INDEX=${BASE_DIR}/del_${SIZE}.k${K}.freqk.index
       VAR_INDEX=${BASE_DIR}/del_${SIZE}.k${K}.freqk.var_index

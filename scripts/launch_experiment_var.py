@@ -31,6 +31,10 @@ Required
 
 Optional
 --------
+  --sizes       one or more SV sizes to include, from:
+                  100bp  500bp  1kb  5kb  10kb
+                (default: 1kb)
+                Example: --sizes 1kb 5kb 10kb
   --positions   one or more 0-based SV start positions on Chr1, in bp
                 (default: 10000000)
                 Must be multiples of 1 Mb so the pos{N}mb label is exact.
@@ -56,8 +60,9 @@ FREQK = "/home/tbellagio/scratch/pang/test_freqk/freqk/target/release/freqk"
 CHROM = "Chr1"
 SV_START_0_DEFAULT = 10_000_000
 
-# ── SV size dictionaries ───────────────────────────────────────────────────────
-DEL_SIZES = {"1kb": 1000}   # var pipeline currently uses 1 kb only; extend as needed
+# ── All supported SV sizes (same as original pipeline) ────────────────────────
+ALL_DEL_SIZES = {"100bp": 100, "500bp": 500, "1kb": 1000, "5kb": 5000, "10kb": 10000}
+ALL_INS_SIZES = {"100bp": 100, "500bp": 500, "1kb": 1000, "5kb": 5000, "10kb": 10000}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -82,10 +87,10 @@ def pos_label_from_pos(pos: int) -> str:
 # ── Config generation ──────────────────────────────────────────────────────────
 
 def generate_config(sv_type: str, coverage: int, sv_freq: float, n_samples: int,
-                    error_rate: float, k: int, pos: int, pos_label: str) -> str:
+                    error_rate: float, k: int, pos: int, pos_label: str,
+                    sizes: dict) -> str:
     sv = sv_type.lower()
-    sizes = DEL_SIZES if sv_type == "DEL" else {}
-    size_var = "DEL_SIZES"
+    size_var = "DEL_SIZES" if sv_type == "DEL" else "INS_SIZES"
     size_lines = "\n".join(f'  ["{name}"]={val}' for name, val in sizes.items())
 
     anchor_pos = pos - 1  # one base before deletion (VCF POS, 1-based)
@@ -155,6 +160,9 @@ def parse_args():
                    help="Fraction of N_SAMPLES haplotypes carrying the SV (e.g. 0.50)")
     p.add_argument("--n-samples",  required=True, type=int,
                    help="Number of ecotype haplotypes to draw from GrENET VCF (e.g. 10)")
+    p.add_argument("--sizes",      nargs="+", default=["1kb"],
+                   choices=list(ALL_DEL_SIZES.keys()),
+                   help="SV sizes to include (default: 1kb). E.g. --sizes 1kb 5kb 10kb")
     p.add_argument("--error-rate", default=0.001, type=float,
                    help="Sequencing error rate (default: 0.001)")
     p.add_argument("--k",          default=31,    type=int,
@@ -170,6 +178,10 @@ def main():
     args = parse_args()
 
     positions = args.positions if args.positions else [SV_START_0_DEFAULT]
+
+    # Build size dict in a consistent order from the requested names
+    all_sizes = ALL_DEL_SIZES if args.sv_type == "DEL" else ALL_INS_SIZES
+    sizes = {name: all_sizes[name] for name in args.sizes}
 
     scripts_dir = Path(__file__).parent
     config_dir  = scripts_dir / "generated_configs"
@@ -191,6 +203,7 @@ def main():
             k          = args.k,
             pos        = pos,
             pos_label  = pos_label,
+            sizes      = sizes,
         )
 
         config_name = (
@@ -209,6 +222,7 @@ def main():
         # ── Print summary ──────────────────────────────────────────────────
         print("=" * 60)
         print(f"  SV type    : {args.sv_type}")
+        print(f"  Sizes      : {', '.join(sizes.keys())}")
         print(f"  Coverage   : {args.coverage}x")
         print(f"  SV freq    : {args.sv_freq}  ({int(round(args.sv_freq * args.n_samples))}/{args.n_samples} haplotypes)")
         print(f"  N samples  : {args.n_samples}")
