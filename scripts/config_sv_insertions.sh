@@ -2,7 +2,7 @@
 
 # Example config for insertion experiments
 
-WORK=/home/tbellagio/scratch/pang/visor_freqk
+WORK=/home/tbellagio/scratch/visor_freqk
 REF=${WORK}/data/reference/Chr1.fa
 
 SV_TYPE="INS"

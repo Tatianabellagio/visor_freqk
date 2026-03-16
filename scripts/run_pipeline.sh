@@ -5,7 +5,7 @@
 #          series of Slurm jobs for a given config file (DEL or INS).
 #
 # Usage:
-#   cd /home/tbellagio/scratch/pang/visor_freqk
+#   cd /home/tbellagio/scratch/visor_freqk
 #   bash scripts/run_pipeline.sh scripts/config_sv_deletions.sh
 #   bash scripts/run_pipeline.sh scripts/config_sv_insertions.sh
 # =============================================================================

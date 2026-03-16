@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Common paths
-WORK=/home/tbellagio/scratch/pang/visor_freqk
+WORK=/home/tbellagio/scratch/visor_freqk
 REF=${WORK}/data/reference/Chr1.fa
 
 # SV design: deletions on Chr1 around 10 Mb
