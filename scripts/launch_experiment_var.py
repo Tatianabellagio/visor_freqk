@@ -2,8 +2,8 @@
 """
 launch_experiment_var.py
 ========================
-Generate a variation-aware config file and submit the var pipeline to Slurm.
-One config + one pipeline submission is created per genomic position.
+Generate variation-aware config files and submit the var pipeline to Slurm.
+One config + one pipeline submission is created per (coverage × sv_freq × position) combination.
 
 This mirrors launch_experiment.py but targets the variation-aware pipeline:
   N ecotype haplotypes are drawn from the GrENET VCF, N_SV = round(N × SV_FREQ)
@@ -11,23 +11,26 @@ This mirrors launch_experiment.py but targets the variation-aware pipeline:
 
 Usage
 -----
-  # Single position (default: 10 Mb)
+  # Single condition
   python scripts/launch_experiment_var.py --sv-type DEL --coverage 50 --sv-freq 0.50 --n-samples 10
 
-  # Multiple positions = replicates
-  python scripts/launch_experiment_var.py --sv-type DEL --coverage 50 --sv-freq 0.50 \\
-      --n-samples 10 --positions 10000000 20000000 30000000
+  # Sweep over coverages, frequencies and positions in one call
+  python scripts/launch_experiment_var.py --sv-type DEL \\
+      --coverage 10 20 --sv-freq 0.10 0.30 0.50 \\
+      --n-samples 100 --sizes 100bp 500bp 1kb 5kb 10kb \\
+      --positions 10000000 15000000
 
-  # Dry run (print config, do not submit)
+  # Dry run (print configs, do not submit)
   python scripts/launch_experiment_var.py --sv-type DEL --coverage 50 --sv-freq 0.50 \\
       --n-samples 10 --positions 10000000 --dry-run
 
 Required
 --------
   --sv-type     DEL (INS not yet supported in var pipeline)
-  --coverage    sequencing depth (integer, e.g. 50)
-  --sv-freq     fraction of N_SAMPLES haplotypes that carry the SV (float, e.g. 0.50)
-  --n-samples   number of ecotype haplotypes to draw from the GrENET VCF (integer, e.g. 10)
+  --coverage    one or more sequencing depths (e.g. --coverage 10 20 50)
+  --sv-freq     one or more SV frequencies; fraction of N_SAMPLES haplotypes that carry the SV
+                (e.g. --sv-freq 0.10 0.30 0.50)
+  --n-samples   number of ecotype haplotypes to draw from the GrENET VCF (integer, e.g. 100)
 
 Optional
 --------
@@ -40,15 +43,17 @@ Optional
                 Must be multiples of 1 Mb so the pos{N}mb label is exact.
   --error-rate  sequencing error rate (float, default: 0.001)
   --k           k-mer size for freqk (integer, default: 31)
-  --dry-run     print config and command, do not submit
+  --dry-run     print configs and commands, do not submit
 
 Position → folder label mapping
 --------------------------------
   --positions 10000000  →  POS_LABEL="pos10mb"
+  --positions 15000000  →  POS_LABEL="pos15mb"
   --positions 25000000  →  POS_LABEL="pos25mb"
 """
 
 import argparse
+import itertools
 import os
 import subprocess
 import sys
