@@ -55,20 +55,79 @@ validate_hap() {
   local fa="$1"
   local fai="${fa}.fai"
   if [[ ! -s "$fa" ]]; then
-    # Expected on first run — informational, not an error
     echo "[validate] not found yet (will run HACk): $fa"
     return 1
   fi
   local n_seqs
   n_seqs=$(wc -l < "$fai" 2>/dev/null || echo 0)
   if [[ "$n_seqs" -ne 1 ]]; then
-    # Genuine error — corrupted output from VISOR
     echo "[validate] ERROR: CORRUPTED: $fa has ${n_seqs} sequences in .fai (expected 1) — deleting" >&2
-    rm -f "$fa" "$fai"
+    rm -f "$fa" "$fai" 2>/dev/null || true   # NFS: ignore busy-file errors
     return 1
   fi
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# Per-sample NFS-safe locking.
+#   acquire_lock DIR   — blocks until lock is owned or times out (exit 1)
+#   release_lock DIR   — removes the lock; safe to call even if not held
+#
+# mkdir is atomic on NFS, so two concurrent callers cannot both succeed.
+# If the lock dir is older than MAX_LOCK_AGE_SECS we treat it as stale
+# (the job that created it was likely killed by Slurm) and steal it.
+# ---------------------------------------------------------------------------
+MAX_LOCK_AGE_SECS=7200   # 2 hours — longer than the job time limit
+
+acquire_lock() {
+  local out_dir="$1"
+  local lock="${out_dir}.lock"
+  local waited=0
+  local poll=15          # seconds between retries
+
+  while true; do
+    if mkdir "${lock}" 2>/dev/null; then
+      # We own the lock — register cleanup so Slurm kills don't leave stale locks
+      _CURRENT_LOCK="${lock}"
+      return 0
+    fi
+
+    # Lock exists — check if it's stale
+    if [[ -d "${lock}" ]]; then
+      local age
+      age=$(( $(date +%s) - $(stat -c %Y "${lock}" 2>/dev/null || echo $(date +%s)) ))
+      if [[ "${age}" -gt "${MAX_LOCK_AGE_SECS}" ]]; then
+        echo "[lock] WARNING: stale lock ${lock} (age=${age}s) — stealing it" >&2
+        rmdir "${lock}" 2>/dev/null || true
+        continue   # retry mkdir
+      fi
+    fi
+
+    # Fresh lock — wait
+    waited=$(( waited + poll ))
+    if [[ "${waited}" -ge 3600 ]]; then
+      echo "ERROR: timed out waiting for lock on ${out_dir} after ${waited}s" >&2
+      exit 1
+    fi
+    echo "[lock] waiting for ${lock} (${waited}s elapsed)..."
+    sleep "${poll}"
+
+    # If the h1.fa appeared while we were waiting the other job succeeded — done
+    if [[ -s "${out_dir}/h1.fa" ]]; then
+      _CURRENT_LOCK=""
+      return 2   # sentinel: already built by concurrent job
+    fi
+  done
+}
+
+release_lock() {
+  local lock="$1"
+  rmdir "${lock}" 2>/dev/null || true
+  _CURRENT_LOCK=""
+}
+
+_CURRENT_LOCK=""
+trap 'release_lock "${_CURRENT_LOCK}" 2>/dev/null || true' EXIT
 
 # ---------------------------------------------------------------------------
 # Determine which samples exist (produced by 00_apply_vcf.sh) and how many
@@ -115,21 +174,41 @@ case "${SV_TYPE}" in
 
         OUT_DIR="${HAPS_VAR}/s_${SAMPLE}_sv_del_${SIZE}"
 
+        # Fast path — already built and valid
         if validate_hap "${OUT_DIR}/h1.fa"; then
           echo "[$(date)] Reusing existing SV haplotype: ${OUT_DIR}/h1.fa"
           continue
         fi
 
-        rm -rf "${OUT_DIR}"
+        # Acquire per-sample lock (NFS-safe atomic mkdir).
+        # Returns 0 = lock owned, 2 = concurrent job built it while we waited.
+        acquire_lock "${OUT_DIR}"
+        lock_rc=$?
+
+        if [[ "${lock_rc}" -eq 2 ]]; then
+          # Another job finished while we were waiting — validate and move on
+          validate_hap "${OUT_DIR}/h1.fa" \
+            || { echo "ERROR: concurrent build of ${SAMPLE} DEL ${SIZE} left corrupt FASTA" >&2; exit 1; }
+          echo "[$(date)] Built by concurrent job: ${OUT_DIR}/h1.fa"
+          continue
+        fi
+
+        # We own the lock — clean up any corrupt partial output without
+        # rm -rf (NFS ghost files (.nfs*) make rm -rf fail on busy dirs).
+        rm -f "${OUT_DIR}/h1.fa" "${OUT_DIR}/h1.fa.fai" 2>/dev/null || true
         mkdir -p "${OUT_DIR}"
 
         echo "[$(date)] HACk DEL ${SIZE} (len=${LEN}) on sample ${SAMPLE}"
         VISOR HACk -g "${SAMPLE_FA}" -b "${BED}" -o "${OUT_DIR}"
 
-        validate_hap "${OUT_DIR}/h1.fa" \
-          || { echo "ERROR: HACk produced corrupt FASTA for ${SAMPLE} DEL ${SIZE}" >&2; exit 1; }
-
-        echo "[$(date)]   Done: ${OUT_DIR}/h1.fa"
+        if validate_hap "${OUT_DIR}/h1.fa"; then
+          echo "[$(date)]   Done: ${OUT_DIR}/h1.fa"
+          release_lock "${OUT_DIR}.lock"
+        else
+          release_lock "${OUT_DIR}.lock"
+          echo "ERROR: HACk produced corrupt FASTA for ${SAMPLE} DEL ${SIZE}" >&2
+          exit 1
+        fi
       done
     done
     ;;
