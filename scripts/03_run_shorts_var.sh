@@ -76,7 +76,10 @@ import sys
 n = int(sys.argv[1])
 base = round(100.0 / n, 4)
 fracs = [base] * n
-fracs[-1] = round(100.0 - base * (n - 1), 4)
+# Last fraction = 100 - sum(first n-1), using the same iterative sum
+# VISOR will do.  This guarantees sum(fracs) == 100.0 exactly in float
+# arithmetic — no decimal-rounding artefacts.
+fracs[-1] = 100.0 - sum(fracs[:-1])
 for f in fracs:
     print(f)
 PY
