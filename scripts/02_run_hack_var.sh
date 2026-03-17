@@ -30,21 +30,10 @@ source "${CONFIG_FILE}"
 
 mkdir -p logs "${HAPS_VAR}"
 
-# ---------------------------------------------------------------------------
-# Fast early-exit: if all SV haplotypes (N_SV × N_SIZES) already exist, skip.
-# Runs before conda activation to avoid unnecessary overhead.
-# ---------------------------------------------------------------------------
-_N_SV=$(python3 -c "print(round(${N_SAMPLES} * ${SV_FREQ}))")
-_N_SIZES=${#DEL_SIZES[@]}
-_N_HAP_EXPECTED=$((_N_SV * _N_SIZES))
-_N_HAP_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" \
-                    -path "*_sv_del_*" -size +0c 2>/dev/null | wc -l) || _N_HAP_EXISTING=0
-if [[ "${_N_HAP_EXPECTED}" -gt 0 && "${_N_HAP_EXISTING}" -ge "${_N_HAP_EXPECTED}" ]]; then
-  echo "[$(date)] Skipping 02_run_hack_var — all ${_N_HAP_EXPECTED} SV haplotypes already exist in ${HAPS_VAR}"
-  echo "[$(date)] To force regeneration: rm -rf ${HAPS_VAR}/*_sv_del_*"
-  exit 0
-fi
-echo "[$(date)] Found ${_N_HAP_EXISTING}/${_N_HAP_EXPECTED} SV haplotypes — building missing ones."
+# Note: no global early-exit here — a file count can match N_SV×N_SIZES even
+# when the wrong samples are covered (e.g. files from a higher-frequency run).
+# The per-sample validate_hap loop below skips existing valid haplotypes and
+# only re-runs VISOR for missing/corrupt ones.
 
 source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
@@ -58,8 +47,8 @@ validate_hap() {
     echo "[validate] not found yet (will run HACk): $fa"
     return 1
   fi
-  local n_seqs
-  n_seqs=$(wc -l < "$fai" 2>/dev/null || echo 0)
+  local n_seqs=0
+  [[ -f "$fai" ]] && n_seqs=$(wc -l < "$fai")
   if [[ "$n_seqs" -ne 1 ]]; then
     echo "[validate] ERROR: CORRUPTED: $fa has ${n_seqs} sequences in .fai (expected 1) — deleting" >&2
     rm -f "$fa" "$fai" 2>/dev/null || true   # NFS: ignore busy-file errors
@@ -193,9 +182,12 @@ case "${SV_TYPE}" in
           continue
         fi
 
-        # We own the lock — clean up any corrupt partial output without
-        # rm -rf (NFS ghost files (.nfs*) make rm -rf fail on busy dirs).
-        rm -f "${OUT_DIR}/h1.fa" "${OUT_DIR}/h1.fa.fai" 2>/dev/null || true
+        # We own the lock — remove the whole output dir to get a fresh inode.
+        # Stale NFS file handles attach to inodes; rm -rf forces a new one.
+        # If rm -rf fails (NFS ghost files), fall back to file-level cleanup.
+        if ! rm -rf "${OUT_DIR}" 2>/dev/null; then
+          rm -f "${OUT_DIR}/h1.fa" "${OUT_DIR}/h1.fa.fai" 2>/dev/null || true
+        fi
         mkdir -p "${OUT_DIR}"
 
         echo "[$(date)] HACk DEL ${SIZE} (len=${LEN}) on sample ${SAMPLE}"
