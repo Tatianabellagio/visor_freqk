@@ -147,10 +147,20 @@ else: print(e.split('.')[-1] if '.' in e else e)
         continue
       fi
 
+      # Clean up any partial state from a previous failed run.
+      # VISOR SHORtS uses os.rmdir() to clean up its clone*/h*/ temp dirs;
+      # if a previous run was killed those dirs are non-empty and cause an
+      # immediate OSError on the next attempt.  Wiping the whole output dir
+      # (safe here because r1.fq/r2.fq don't exist yet) avoids this.
+      rm -rf "${OUT}"
       mkdir -p "${OUT}"
 
       echo "[$(date)] Running VISOR SHORtS: ${N_CLONES} clones, DEL ${SIZE}, cov=${COVERAGE}x"
 
+      # VISOR SHORtS has a bug: os.rmdir() on its own clone*/h*/ temp dirs fails
+      # with "Directory not empty" even though VISOR created those files itself.
+      # The reads ARE produced correctly before the cleanup step, so we use || true
+      # to ignore the spurious non-zero exit, then validate r1.fq/r2.fq below.
       VISOR SHORtS \
           -g "${REF}" \
           -s "${CLONE_DIRS[@]}" \
@@ -162,8 +172,13 @@ else: print(e.split('.')[-1] if '.' in e else e)
           --fastq \
           --threads 8 || true
 
-      echo "[$(date)] Done. Output in ${OUT}"
-      ls -lh "${OUT}"
+      if [[ -s "${OUT}/r1.fq" && -s "${OUT}/r2.fq" ]]; then
+        echo "[$(date)] Done. Output in ${OUT}"
+        ls -lh "${OUT}"
+      else
+        echo "ERROR: SHORtS finished but r1.fq/r2.fq missing in ${OUT}" >&2
+        exit 1
+      fi
     done
     ;;
   *)

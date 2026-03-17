@@ -2,7 +2,7 @@
 #SBATCH --job-name=apply_vcf
 #SBATCH --output=logs/00_apply_vcf_%j.out
 #SBATCH --error=logs/00_apply_vcf_%j.err
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 
@@ -35,7 +35,7 @@ mkdir -p logs "${HAPS_VAR}"
 # Fast early-exit: if all N_SAMPLES FASTAs already exist, nothing to do.
 # This check runs BEFORE conda activation to avoid unnecessary overhead.
 # ---------------------------------------------------------------------------
-N_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" 2>/dev/null | wc -l) || N_EXISTING=0
+N_EXISTING=$(find "${HAPS_VAR}" -mindepth 2 -maxdepth 2 -name "h1.fa" 2>/dev/null | grep -v '_sv_del_' | wc -l) || N_EXISTING=0
 if [[ "${N_EXISTING}" -ge "${N_SAMPLES}" ]]; then
   echo "[$(date)] Skipping 00_apply_vcf — all ${N_SAMPLES} haplotype FASTAs already exist in ${HAPS_VAR}"
   echo "[$(date)] To force regeneration, remove the directory: rm -rf ${HAPS_VAR}"
