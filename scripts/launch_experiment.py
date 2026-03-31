@@ -53,7 +53,7 @@ import sys
 from pathlib import Path
 
 # ── Fixed paths (adjust if the project moves) ─────────────────────────────────
-WORK   = "/home/tbellagio/scratch/pang/visor_freqk"
+WORK   = "/home/tbellagio/scratch/visor_freqk"
 FREQK  = "/home/tbellagio/scratch/pang/test_freqk/freqk/target/release/freqk"
 CHROM  = "Chr1"
 # Default single-position anchor (used when --positions is not provided)

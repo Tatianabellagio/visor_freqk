@@ -35,13 +35,13 @@ validate_hap() {
   local fa="$1"
   local fai="${fa}.fai"
   if [[ ! -s "$fa" ]]; then
-    echo "[validate] MISSING or empty: $fa" >&2
+    echo "[validate] not found yet (will run HACk): $fa"
     return 1
   fi
   local n_seqs
   n_seqs=$(wc -l < "$fai" 2>/dev/null || echo 0)
   if [[ "$n_seqs" -ne 1 ]]; then
-    echo "[validate] CORRUPTED: $fa has ${n_seqs} sequence(s) in .fai (expected 1) — deleting" >&2
+    echo "[validate] ERROR: CORRUPTED: $fa has ${n_seqs} sequence(s) in .fai (expected 1) — deleting" >&2
     rm -f "$fa" "$fai"
     return 1
   fi
