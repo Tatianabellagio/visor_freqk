@@ -40,16 +40,18 @@ Optional
                 Example: --sizes 1kb 5kb 10kb
   --positions   one or more 0-based SV start positions on Chr1, in bp
                 (default: 10000000)
-                Must be multiples of 1 Mb so the pos{N}mb label is exact.
   --error-rate  sequencing error rate (float, default: 0.001)
   --k           k-mer size for freqk (integer, default: 31)
   --dry-run     print configs and commands, do not submit
 
 Position → folder label mapping
 --------------------------------
-  --positions 10000000  →  POS_LABEL="pos10mb"
-  --positions 15000000  →  POS_LABEL="pos15mb"
-  --positions 25000000  →  POS_LABEL="pos25mb"
+  Exact Mb multiples use a short label:
+    10000000  →  POS_LABEL="pos10mb"
+    15000000  →  POS_LABEL="pos15mb"
+  Non-exact positions include the full bp value:
+    15200000  →  POS_LABEL="pos15200000"
+    15500000  →  POS_LABEL="pos15500000"
 """
 
 import argparse
@@ -86,8 +88,10 @@ def format_error_label(error_rate: float) -> str:
 
 
 def pos_label_from_pos(pos: int) -> str:
-    """10_000_000 -> 'pos10mb', 25_000_000 -> 'pos25mb'"""
-    return f"pos{pos // 1_000_000}mb"
+    """10_000_000 -> 'pos10mb', 15_200_000 -> 'pos15200000'"""
+    if pos % 1_000_000 == 0:
+        return f"pos{pos // 1_000_000}mb"
+    return f"pos{pos}"
 
 
 # ── Config generation ──────────────────────────────────────────────────────────

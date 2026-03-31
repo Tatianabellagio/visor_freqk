@@ -193,6 +193,10 @@ case "${SV_TYPE}" in
         echo "[$(date)] HACk DEL ${SIZE} (len=${LEN}) on sample ${SAMPLE}"
         VISOR HACk -g "${SAMPLE_FA}" -b "${BED}" -o "${OUT_DIR}"
 
+        # NFS metadata cache can lag; give the filesystem a moment to flush
+        # before validate_hap checks for the file.
+        sync; sleep 3
+
         if validate_hap "${OUT_DIR}/h1.fa"; then
           echo "[$(date)]   Done: ${OUT_DIR}/h1.fa"
           release_lock "${OUT_DIR}.lock"
