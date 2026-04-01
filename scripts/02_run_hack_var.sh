@@ -12,10 +12,10 @@
 #          per-sample consensus FASTAs produced by 00_apply_vcf.sh.
 #
 # Each SV-bearing sample gets its own VISOR HACk output directory:
-#   ${HAPS_VAR}/s_<sample>_sv/   ← contains h1.fa (consensus + deletion)
+#   ${HAPS_SV}/s_<sample>_sv_del_<SIZE>/   ← contains h1.fa (consensus + deletion)
 #
-# Non-SV samples are left untouched in ${HAPS_VAR}/s_<sample>/
-# (already created by 00_apply_vcf.sh).
+# WT haplotypes are read from ${HAPS_WT}/s_<sample>/h1.fa
+# (produced once by 00_apply_vcf.sh, shared across positions).
 #
 # Key: because the GrENET VCF contains SNPs only (no indels), the deletion
 #      BED coordinates are identical in the per-sample and original FASTAs.
@@ -28,7 +28,7 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 CONFIG_FILE=${1:-"$(dirname "$0")/config_sv_var_deletions.sh"}
 source "${CONFIG_FILE}"
 
-mkdir -p logs "${HAPS_VAR}"
+mkdir -p logs "${HAPS_SV}"
 
 # Note: no global early-exit here — a file count can match N_SV×N_SIZES even
 # when the wrong samples are covered (e.g. files from a higher-frequency run).
@@ -155,13 +155,13 @@ case "${SV_TYPE}" in
       fi
 
       for SAMPLE in "${SV_SAMPLES[@]}"; do
-        SAMPLE_FA="${HAPS_VAR}/s_${SAMPLE}/h1.fa"
+        SAMPLE_FA="${HAPS_WT}/s_${SAMPLE}/h1.fa"
         if [[ ! -s "${SAMPLE_FA}" ]]; then
-          echo "ERROR: consensus FASTA missing: ${SAMPLE_FA} — run 00_apply_vcf.sh first" >&2
+          echo "ERROR: WT FASTA missing: ${SAMPLE_FA} — run 00_apply_vcf.sh first" >&2
           exit 1
         fi
 
-        OUT_DIR="${HAPS_VAR}/s_${SAMPLE}_sv_del_${SIZE}"
+        OUT_DIR="${HAPS_SV}/s_${SAMPLE}_sv_del_${SIZE}"
 
         # Fast path — already built and valid
         if validate_hap "${OUT_DIR}/h1.fa"; then
@@ -217,6 +217,6 @@ esac
 echo "[$(date)] All SV haplotypes created. Summary:"
 for SIZE in "${!DEL_SIZES[@]}"; do
   for SAMPLE in "${SV_SAMPLES[@]}"; do
-    ls -lh "${HAPS_VAR}/s_${SAMPLE}_sv_del_${SIZE}/h1.fa" 2>/dev/null || true
+    ls -lh "${HAPS_SV}/s_${SAMPLE}_sv_del_${SIZE}/h1.fa" 2>/dev/null || true
   done
 done

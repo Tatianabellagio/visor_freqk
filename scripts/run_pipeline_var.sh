@@ -6,7 +6,8 @@
 # Job chain:
 #   00_prep_vcf ──┬── 00_apply_vcf ──┐
 #                 └── 01_make_beds ──┴── 02_run_hack_var ── 03_run_shorts_var ──┐
-#   04_make_vcf_var (no deps, runs immediately) ──────────────────────────────────┴── 05_freqk_var
+#   04_make_vcf_var      (no deps) ───────────────────────────────────────────────┴── 05_freqk_var
+#   06_compute_repeat_score (no deps, rep labels only) — updates positions_registry.tsv
 #
 # Usage:
 #   cd /home/tbellagio/scratch/visor_freqk
@@ -51,11 +52,16 @@ echo "Submitted 03_run_shorts_var.sh as job ${JOB3} (afterok:${JOB2})"
 
 # Step 04var: build SV VCFs — no dependency on haplotypes or reads, runs immediately
 JOB4=$(sbatch --parsable "${SCRIPTS_DIR}/04_make_vcf_var.sh" "${CONFIG_FILE}")
-echo "Submitted 04_make_vcf_var.sh   as job ${JOB4} (no dependency)"
+echo "Submitted 04_make_vcf_var.sh          as job ${JOB4} (no dependency)"
 
 # Step 05var: freqk — needs both reads (JOB3) and VCF (JOB4)
 JOB5=$(sbatch --parsable --dependency=afterok:${JOB3}:${JOB4} "${SCRIPTS_DIR}/05_freqk_var.sh" "${CONFIG_FILE}")
-echo "Submitted 05_freqk_var.sh      as job ${JOB5} (afterok:${JOB3}:${JOB4})"
+echo "Submitted 05_freqk_var.sh             as job ${JOB5} (afterok:${JOB3}:${JOB4})"
+
+# Step 06: compute genome-wide repeat score and update registry — no dependency,
+# runs in parallel with everything else. Skips automatically for legacy pos labels.
+JOB6=$(sbatch --parsable "${SCRIPTS_DIR}/06_compute_repeat_score.sh" "${CONFIG_FILE}")
+echo "Submitted 06_compute_repeat_score.sh  as job ${JOB6} (no dependency)"
 
 # Save job IDs for timing queries
 cat > "${JOBIDS_FILE}" << EOF
@@ -68,17 +74,19 @@ CONFIG=${CONFIG_FILE}
 03_run_shorts_var=${JOB3}
 04_make_vcf_var=${JOB4}
 05_freqk_var=${JOB5}
+06_compute_repeat_score=${JOB6}
 EOF
 
 echo
 echo "Pipeline submitted."
-echo "  00_prep_vcf.sh        : ${JOB_PREP}"
-echo "  00_apply_vcf.sh       : ${JOB0}"
-echo "  01_make_beds.sh       : ${JOB1}"
-echo "  02_run_hack_var.sh    : ${JOB2}"
-echo "  03_run_shorts_var.sh  : ${JOB3}"
-echo "  04_make_vcf_var.sh    : ${JOB4}"
-echo "  05_freqk_var.sh       : ${JOB5}"
+echo "  00_prep_vcf.sh               : ${JOB_PREP}"
+echo "  00_apply_vcf.sh              : ${JOB0}"
+echo "  01_make_beds.sh              : ${JOB1}"
+echo "  02_run_hack_var.sh           : ${JOB2}"
+echo "  03_run_shorts_var.sh         : ${JOB3}"
+echo "  04_make_vcf_var.sh           : ${JOB4}"
+echo "  05_freqk_var.sh              : ${JOB5}"
+echo "  06_compute_repeat_score.sh   : ${JOB6}"
 echo
 echo "Job IDs saved to: ${JOBIDS_FILE}"
 echo "Check timing once done:"

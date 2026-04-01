@@ -105,7 +105,7 @@ case "${SV_TYPE}" in
       CLONE_DIRS=()
 
       for SAMPLE in "${SAMPLES[@]:0:${N_SV}}"; do
-        SV_DIR="${HAPS_VAR}/s_${SAMPLE}_sv_del_${SIZE}"
+        SV_DIR="${HAPS_SV}/s_${SAMPLE}_sv_del_${SIZE}"
         if [[ ! -s "${SV_DIR}/h1.fa" ]]; then
           echo "ERROR: SV haplotype missing: ${SV_DIR}/h1.fa — run 02_run_hack_var.sh first" >&2
           exit 1
@@ -114,7 +114,7 @@ case "${SV_TYPE}" in
       done
 
       for SAMPLE in "${SAMPLES[@]:${N_SV}}"; do
-        WT_DIR="${HAPS_VAR}/s_${SAMPLE}"
+        WT_DIR="${HAPS_WT}/s_${SAMPLE}"
         if [[ ! -s "${WT_DIR}/h1.fa" ]]; then
           echo "ERROR: WT haplotype missing: ${WT_DIR}/h1.fa — run 00_apply_vcf.sh first" >&2
           exit 1
