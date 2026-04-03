@@ -1,6 +1,6 @@
 # visor_freqk
 
-Benchmarking pipeline for [`freqk`](https://github.com/grenenet/freqk), a k-mer-based tool for estimating structural variant (SV) allele frequencies from pool-seq short-read data. The pipeline uses [VISOR](https://davidlaewen.github.io/VISOR/) to simulate haplotypes with known deletions or insertions at controlled frequencies, then evaluates how accurately freqk recovers those frequencies across a range of SV sizes, sequencing depths, error rates, and k-mer sizes.
+Benchmarking pipeline for [`freqk`](https://github.com/milesroberts-123/freqk/tree/main/src), a k-mer-based tool for estimating structural variant (SV) allele frequencies from pool-seq short-read data. The pipeline uses [VISOR](https://github.com/davidebolo1993/VISOR) to simulate haplotypes with known deletions or insertions at controlled frequencies, then evaluates how accurately freqk recovers those frequencies across a range of SV sizes, sequencing depths, error rates, and k-mer sizes.
 
 Two modes are supported:
 - **Standard pipeline** — clean synthetic haplotypes (SV carrier + WT reference clone)
@@ -124,8 +124,8 @@ bash scripts/check_timing.sh logs/pipeline_var_20260316_143200.jobids
 
 ## Tools & dependencies
 
-- [VISOR](https://davidlaewen.github.io/VISOR/) — SV haplotype simulation and pool-seq read generation
-- [freqk](https://github.com/grenenet/freqk) — k-mer-based SV allele frequency estimation
+- [VISOR](https://github.com/davidebolo1993/VISOR) — SV haplotype simulation and pool-seq read generation
+- [freqk](https://github.com/milesroberts-123/freqk/tree/main/src) — k-mer-based SV allele frequency estimation
 - [bcftools](https://samtools.github.io/bcftools/) — VCF manipulation and consensus sequence generation
 - SLURM — job scheduling
 - Python 3, Bash
