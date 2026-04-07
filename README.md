@@ -122,6 +122,33 @@ bash scripts/check_timing.sh logs/pipeline_var_20260316_143200.jobids
 
 ---
 
+## Repeat score
+
+Each genomic position in the analysis is annotated with a **repeat score** — the fraction of 31-mers in a 10 kb window starting at the SV position that appear **≥2 times anywhere in Chr1**:
+
+```
+repeat_score(pos) = |{ k-mers in ref[pos : pos+10000] that appear ≥2× in Chr1 }|
+                    ─────────────────────────────────────────────────────────────
+                              total k-mers in ref[pos : pos+10000]
+```
+
+The genome-wide multi-copy k-mer set is built once from the full Chr1 FASTA (`data/reference/Chr1.fa`), so the score reflects global uniqueness: a k-mer is only counted as unique if it occurs exactly once across the entire chromosome.
+
+Positions are then classified as:
+
+| Score | Class |
+|-------|-------|
+| < 0.10 | low repeat |
+| 0.10 – 0.50 | moderate repeat |
+| ≥ 0.50 | high repeat |
+
+**Where it is computed:**
+- **`scripts/sample_positions.py`** — at position-sampling time; stored in `data/positions_registry.tsv` under `global_repeat_score`
+- **`scripts/compute_repeat_score.py`** / **`scripts/06_compute_repeat_score.sh`** — as a pipeline job for each `rep*` position, updating the registry in-place
+- **`summaries/results_var.ipynb`** / **`summaries/results_rep.ipynb`** — re-computed from the FASTA at analysis time using the same 10 kb window, so notebook scores match the registry
+
+---
+
 ## Tools & dependencies
 
 - [VISOR](https://github.com/davidebolo1993/VISOR) — SV haplotype simulation and pool-seq read generation
