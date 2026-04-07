@@ -46,6 +46,16 @@
 #!*.txt
 
 ############################
+# Generated / ephemeral
+############################
+# Auto-generated per-run configs — too many, cluster-specific paths
+scripts/generated_configs/
+
+# macOS metadata files
+._*
+**/.DS_Store
+
+############################
 # Jupyter noise (still ignore)
 ############################
 .ipynb_checkpoints/

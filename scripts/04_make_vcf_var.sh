@@ -58,10 +58,19 @@ case "${SV_TYPE}" in
       VCF_RAW="${VCF_DIR}/del_${SIZE}.vcf"
       VCF_GZ="${VCF_DIR}/del_${SIZE}.vcf.gz"
 
+      # Fast path (no lock)
       if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
         echo "[$(date)] Reusing existing VCF for DEL ${SIZE}: ${VCF_GZ}"
         continue
       fi
+
+      # Slow path: acquire per-size lock so concurrent sv_freq jobs don't race
+      (
+        flock -x 200
+        if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
+          echo "[$(date)] Reusing existing VCF for DEL ${SIZE} (built by parallel job): ${VCF_GZ}"
+          exit 0
+        fi
 
       echo "[$(date)] Building DEL VCF for ${SIZE}: POS=${POS}, DEL_END=${DEL_END}, SVLEN=${SVLEN}"
 
@@ -87,6 +96,7 @@ VCFEOF
       tabix "${VCF_GZ}"
 
       echo "[$(date)] Done: ${VCF_GZ}"
+      ) 200>"${VCF_DIR}/del_${SIZE}.lock"
     done
     ;;
   "INS")
@@ -100,10 +110,19 @@ VCFEOF
       VCF_RAW="${VCF_DIR}/ins_${SIZE}.vcf"
       VCF_GZ="${VCF_DIR}/ins_${SIZE}.vcf.gz"
 
+      # Fast path (no lock)
       if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
         echo "[$(date)] Reusing existing VCF for INS ${SIZE}: ${VCF_GZ}"
         continue
       fi
+
+      # Slow path: acquire per-size lock
+      (
+        flock -x 200
+        if [[ -s "${VCF_GZ}" && -s "${VCF_GZ}.tbi" ]]; then
+          echo "[$(date)] Reusing existing VCF for INS ${SIZE} (built by parallel job): ${VCF_GZ}"
+          exit 0
+        fi
 
       echo "[$(date)] Building INS VCF for ${SIZE}: POS=${POS}, SVLEN=${SVLEN}"
 
@@ -129,6 +148,7 @@ VCFEOF
       tabix "${VCF_GZ}"
 
       echo "[$(date)] Done: ${VCF_GZ}"
+      ) 200>"${VCF_DIR}/ins_${SIZE}.lock"
     done
     ;;
   *)

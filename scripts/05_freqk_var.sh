@@ -36,7 +36,7 @@ _RTAG="n${N_SAMPLES}_f${_FL}_err${_EL}"
 _N_AF_DONE=0; _N_AF_TOTAL=0
 for _SZ in "${!DEL_SIZES[@]}"; do
   _N_AF_TOTAL=$((_N_AF_TOTAL + 1))
-  _BDIR="${RESULTS}/cov${COVERAGE}_err${_EL}/${SV_TYPE}/${_SZ}/n${N_SAMPLES}/f${_FL}/k${K}"
+  _BDIR="${RESULTS}/cov${COVERAGE}_err${_EL}/${_SZ}/n${N_SAMPLES}/f${_FL}/k${K}"
   _AF="${_BDIR}/var_del_${_SZ}_${_RTAG}.allele_frequencies.k${K}.tsv"
   [[ -s "${_AF}" ]] && _N_AF_DONE=$((_N_AF_DONE + 1))
 done
@@ -79,9 +79,9 @@ case "${SV_TYPE}" in
 
       VCF=${VCF_DIR}/del_${SIZE}.vcf.gz
 
-      # results/cov<X>_err<E>/DEL/<SIZE>/n<N>/f<F>/k<K>/
+      # results/cov<X>_err<E>/<SIZE>/n<N>/f<F>/k<K>/
       N_LABEL="n${N_SAMPLES}"
-      BASE_DIR=${RESULTS}/${COV_LABEL}_${ERR_LABEL_DIR}/${SV_TYPE}/${SIZE}/${N_LABEL}/${FREQ_LABEL_DIR}/${K_LABEL}
+      BASE_DIR=${RESULTS}/${COV_LABEL}_${ERR_LABEL_DIR}/${SIZE}/${N_LABEL}/${FREQ_LABEL_DIR}/${K_LABEL}
 
       INDEX=${BASE_DIR}/del_${SIZE}.k${K}.freqk.index
       VAR_INDEX=${BASE_DIR}/del_${SIZE}.k${K}.freqk.var_index
@@ -123,8 +123,15 @@ case "${SV_TYPE}" in
       ls -lh "${INDEX}"
 
       # --- combine reads ---
-      echo "[$(date)] Combining r1.fq + r2.fq → all.fq (${SIZE})"
-      cat "${READS_DIR}/r1.fq" "${READS_DIR}/r2.fq" > "${READS_COMBINED}"
+      # Write to a temp file then atomic mv so concurrent k-jobs sharing the
+      # same reads dir don't truncate the file while another job is reading it.
+      if [[ ! -s "${READS_COMBINED}" ]]; then
+        echo "[$(date)] Combining r1.fq + r2.fq → all.fq (${SIZE})"
+        cat "${READS_DIR}/r1.fq" "${READS_DIR}/r2.fq" > "${READS_COMBINED}.tmp"
+        mv -f "${READS_COMBINED}.tmp" "${READS_COMBINED}"
+      else
+        echo "[$(date)] Reusing existing all.fq (${SIZE})"
+      fi
 
       step() {
         local label="$1"; shift
