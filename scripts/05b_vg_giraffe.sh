@@ -68,6 +68,21 @@ fi
 echo "[$(date)] Found ${_N_DONE}/${_N_TOTAL} AF files — running missing ones."
 
 # ---------------------------------------------------------------------------
+# Per-job scratch for vg's SDSL temp files.  vg autoindex / vg pack drop
+# `text_*.sdsl`, `sa_*.sdsl`, `<pid>_*_text_rec*.sdsl`, etc. into cwd while
+# building succinct data structures.  Without this, those land in the
+# project root on NFS (slow + survive crashes as orphans).  cd into a
+# per-job /tmp dir so they live on local disk and disappear with the job.
+# All other paths used downstream are absolute (built from $WORK), so the
+# cd is safe.
+# ---------------------------------------------------------------------------
+VG_SCRATCH="${SLURM_TMPDIR:-/tmp}/vg_${SLURM_JOB_ID:-$$}"
+mkdir -p "${VG_SCRATCH}"
+trap 'rm -rf "${VG_SCRATCH}"' EXIT
+cd "${VG_SCRATCH}"
+echo "[$(date)] vg scratch: ${VG_SCRATCH}"
+
+# ---------------------------------------------------------------------------
 # Env: pang has vg, samtools, bcftools (mosdepth not needed here)
 # ---------------------------------------------------------------------------
 source "$(mamba info --base)/etc/profile.d/conda.sh" && mamba activate pang
