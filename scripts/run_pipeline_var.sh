@@ -58,6 +58,14 @@ echo "Submitted 04_make_vcf_var.sh          as job ${JOB4} (no dependency)"
 JOB5=$(sbatch --parsable --dependency=afterok:${JOB3}:${JOB4} "${SCRIPTS_DIR}/05_freqk_var.sh" "${CONFIG_FILE}")
 echo "Submitted 05_freqk_var.sh             as job ${JOB5} (afterok:${JOB3}:${JOB4})"
 
+# Step 05b: vg giraffe benchmark — needs reads (JOB3) and VCF (JOB4), independent of freqk.
+# Opt-in via RUN_BENCHMARKS=1 (default: off) so existing behaviour is unchanged.
+JOB5B=""
+if [[ "${RUN_BENCHMARKS:-0}" != "0" ]]; then
+  JOB5B=$(sbatch --parsable --dependency=afterok:${JOB3}:${JOB4} "${SCRIPTS_DIR}/05b_vg_giraffe.sh" "${CONFIG_FILE}")
+  echo "Submitted 05b_vg_giraffe.sh           as job ${JOB5B} (afterok:${JOB3}:${JOB4})"
+fi
+
 # Step 06: compute genome-wide repeat score and update registry — no dependency,
 # runs in parallel with everything else. Skips automatically for legacy pos labels.
 JOB6=$(sbatch --parsable "${SCRIPTS_DIR}/06_compute_repeat_score.sh" "${CONFIG_FILE}")
@@ -74,6 +82,7 @@ CONFIG=${CONFIG_FILE}
 03_run_shorts_var=${JOB3}
 04_make_vcf_var=${JOB4}
 05_freqk_var=${JOB5}
+05b_vg_giraffe=${JOB5B}
 06_compute_repeat_score=${JOB6}
 EOF
 
@@ -86,8 +95,16 @@ echo "  02_run_hack_var.sh           : ${JOB2}"
 echo "  03_run_shorts_var.sh         : ${JOB3}"
 echo "  04_make_vcf_var.sh           : ${JOB4}"
 echo "  05_freqk_var.sh              : ${JOB5}"
+if [[ -n "${JOB5B}" ]]; then
+  echo "  05b_vg_giraffe.sh            : ${JOB5B}"
+fi
 echo "  06_compute_repeat_score.sh   : ${JOB6}"
 echo
 echo "Job IDs saved to: ${JOBIDS_FILE}"
 echo "Check timing once done:"
 echo "  bash ${SCRIPTS_DIR}/check_timing.sh ${JOBIDS_FILE}"
+if [[ -z "${JOB5B}" ]]; then
+  echo
+  echo "Note: 05b_vg_giraffe was NOT submitted.  Set RUN_BENCHMARKS=1 to include it,"
+  echo "      or run scripts/launch_benchmarks.py against already-finished reps."
+fi

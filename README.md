@@ -1,37 +1,14 @@
 # visor_freqk
 
-Benchmarking pipeline for [`freqk`](https://github.com/milesroberts-123/freqk/tree/main/src), a k-mer-based tool for estimating structural variant (SV) allele frequencies from pool-seq short-read data. The pipeline uses [VISOR](https://github.com/davidebolo1993/VISOR) to simulate haplotypes with known deletions or insertions at controlled frequencies, then evaluates how accurately freqk recovers those frequencies across a range of SV sizes, sequencing depths, error rates, and k-mer sizes.
+Benchmarking pipeline for [`freqk`](https://github.com/milesroberts-123/freqk/tree/main/src), a k-mer-based tool for estimating structural variant (SV) allele frequencies from pool-seq short-read data. Uses [VISOR](https://github.com/davidebolo1993/VISOR) to simulate haplotypes with known deletions at controlled frequencies against realistic GrENE-Net ecotype backgrounds drawn from the population VCF, then evaluates how accurately freqk recovers those frequencies across a range of SV sizes, sequencing depths, error rates, and k-mer sizes.
 
-Two modes are supported:
-- **Standard pipeline** — clean synthetic haplotypes (SV carrier + WT reference clone)
-- **Variation-aware pipeline** — realistic GrENE-Net ecotype backgrounds drawn from the population VCF, modelling natural SNP diversity
+A parallel step benchmarks freqk against **vg giraffe + vg call**, a pangenome-graph SV genotyper, using the same simulated reads.
 
 Compute jobs are submitted as chained SLURM dependency chains on an HPC cluster.
 
 ---
 
 ## Quick start
-
-### Standard pipeline
-
-```bash
-# Single position (default: 10 Mb), 50x coverage, 50% SV frequency
-python scripts/launch_experiment.py --sv-type DEL --coverage 50 --freq 0.50
-
-# With sequencing errors and custom k
-python scripts/launch_experiment.py --sv-type INS --coverage 100 --freq 0.25 \
-    --error-rate 0.01 --k 21
-
-# Three independent replicates at different genomic positions
-python scripts/launch_experiment.py --sv-type DEL --coverage 50 --freq 0.50 \
-    --positions 10000000 20000000 30000000
-
-# Preview without submitting
-python scripts/launch_experiment.py --sv-type DEL --coverage 50 --freq 0.50 \
-    --positions 10000000 20000000 --dry-run
-```
-
-### Variation-aware pipeline
 
 ```bash
 # One-time VCF chromosome rename (run once per cluster)
@@ -57,19 +34,7 @@ python scripts/launch_experiment_var.py \
 
 ## Launcher arguments
 
-### Standard (`launch_experiment.py`)
-
-| Argument | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `--sv-type` | yes | — | `DEL` or `INS` |
-| `--coverage` | yes | — | Sequencing depth |
-| `--freq` | yes | — | SV allele frequency (0–1) |
-| `--positions` | no | `10000000` | One or more 0-based positions (multiples of 1 Mb) |
-| `--error-rate` | no | `0.0` | Sequencing error rate |
-| `--k` | no | `31` | k-mer size for freqk |
-| `--dry-run` | no | off | Print config; do not submit |
-
-### Variation-aware (`launch_experiment_var.py`)
+### `launch_experiment_var.py`
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -89,13 +54,15 @@ python scripts/launch_experiment_var.py \
 
 | Step | Script | Description |
 |------|--------|-------------|
+| 00a | `00_prep_vcf.sh` | Rename VCF chromosomes ("1" → "Chr1") |
+| 00b | `00_apply_vcf.sh` | Build per-ecotype consensus FASTAs from the GrENE-Net population VCF |
 | 01 | `01_make_beds.sh` | Write SV BED files for each size |
-| 02 | `02_run_hack.sh` | VISOR HACk — inject SVs into haplotype FASTAs |
-| 03 | `03_run_shorts.sh` | VISOR SHORtS — simulate pool-seq paired-end reads |
-| 04 | `04_make_vcf.sh` | Build sequence-resolved VCFs |
-| 05 | `05_freqk.sh` | Run freqk: index → var-dedup → ref-dedup → count → call |
-
-In the variation-aware pipeline, steps 00a (`prep_vcf`) and 00b (`apply_vcf`) precede these to build per-ecotype FASTAs from the GrENE-Net population VCF.
+| 02 | `02_run_hack_var.sh` | VISOR HACk — inject SVs into N_SV ecotype haplotypes |
+| 03 | `03_run_shorts_var.sh` | VISOR SHORtS — simulate pool-seq paired-end reads |
+| 04 | `04_make_vcf_var.sh` | Build sequence-resolved truth VCFs |
+| 05 | `05_freqk_var.sh` | Run freqk: index → var-dedup → ref-dedup → count → call |
+| 05b | `05b_vg_giraffe.sh` | Benchmark: vg giraffe + vg call on the same reads |
+| 06 | `06_compute_repeat_score.sh` | Annotate each rep position with its k-mer repeat score |
 
 ---
 
@@ -104,8 +71,37 @@ In the variation-aware pipeline, steps 00a (`prep_vcf`) and 00b (`apply_vcf`) pr
 All parameters are encoded in output paths so runs never overwrite each other:
 
 ```
-results/{sv}/{pos_label}/cov{COV}_err{ERR}/{SV_TYPE}/{SIZE}/f{FREQ}/k{K}/
-results/{sv}/{pos_label}/var/cov{COV}_err{ERR}/{SV_TYPE}/{SIZE}/n{N}/f{FREQ}/k{K}/  # var pipeline
+results/del/{pos_label}/var/cov{COV}_err{ERR}/{SIZE}/n{N}/f{FREQ}/k{K}/
+```
+
+Each terminal directory contains both freqk and vg giraffe allele-frequency TSVs:
+
+```
+var_del_{SIZE}_n{N}_f{FREQ}_err{ERR}.allele_frequencies.k{K}.tsv              # freqk
+var_del_{SIZE}_n{N}_f{FREQ}_err{ERR}.vg_giraffe.allele_frequencies.k{K}.tsv   # vg giraffe
+```
+
+Both use the same schema: a single line `af_ref|af_alt`.
+
+---
+
+## vg giraffe benchmark (step 05b)
+
+`05b_vg_giraffe.sh` runs the standard graph-SV-genotyping workflow on each simulated pool:
+
+1. `vg autoindex --workflow giraffe` builds a pangenome graph from the reference FASTA + truth VCF (cached per `pos_label × SIZE` under `data/vg_indexes/`).
+2. `vg giraffe` maps the simulated reads to the graph.
+3. `vg pack` aggregates read support onto graph edges.
+4. `vg call -v <truth.vcf> -a` genotypes the known deletion site, emitting per-allele depth (AD).
+5. `af_alt = AD_alt / (AD_ref + AD_alt)`; written to the same directory as freqk's output.
+
+`pang` is the only conda/mamba env required — it provides `vg`, `samtools`, and `bcftools`.
+
+To run the benchmark on already-simulated reads (no VISOR re-run):
+
+```bash
+python scripts/launch_benchmarks.py --rep-ids rep1 rep2 \
+    --sizes 1kb --coverage 50 --sv-freq 0.50 --n-samples 231
 ```
 
 ---
@@ -153,6 +149,7 @@ Positions are then classified as:
 
 - [VISOR](https://github.com/davidebolo1993/VISOR) — SV haplotype simulation and pool-seq read generation
 - [freqk](https://github.com/milesroberts-123/freqk/tree/main/src) — k-mer-based SV allele frequency estimation
+- [vg](https://github.com/vgteam/vg) — pangenome graph construction, mapping (giraffe), and genotyping (call)
 - [bcftools](https://samtools.github.io/bcftools/) — VCF manipulation and consensus sequence generation
 - SLURM — job scheduling
 - Python 3, Bash

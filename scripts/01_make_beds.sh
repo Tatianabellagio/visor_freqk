@@ -23,25 +23,54 @@ source "${CONFIG_FILE}"
 mkdir -p "${BEDS}" logs
 
 # ---------------------------------------------------------------------------
-# Fast early-exit: if all BED files already exist, nothing to do.
-# Runs before conda activation to avoid unnecessary overhead.
+# Fast early-exit: if all BED files already exist AND encode the current
+# SV_START_0, nothing to do.  A plain existence check is unsafe because
+# re-using the same rep_id after a position change would silently propagate
+# the old position into haplotypes, reads, VCFs and results.
 # ---------------------------------------------------------------------------
-_N_BED_DONE=0; _N_BED_TOTAL=0
+_N_BED_DONE=0; _N_BED_TOTAL=0; _STALE=""
+_check_bed_start() {
+  local bed="$1" expected="$2"
+  local got
+  got=$(awk 'NR==1 {print $2; exit}' "${bed}" 2>/dev/null || true)
+  [[ "${got}" == "${expected}" ]]
+}
 case "${SV_TYPE}" in
   "DEL") for _S in "${!DEL_SIZES[@]}"; do
            _N_BED_TOTAL=$((_N_BED_TOTAL+1))
-           [[ -s "${BEDS}/hack_del_${_S}.bed" ]] && _N_BED_DONE=$((_N_BED_DONE+1))
+           _BED="${BEDS}/hack_del_${_S}.bed"
+           if [[ -s "${_BED}" ]]; then
+             if _check_bed_start "${_BED}" "${SV_START_0}"; then
+               _N_BED_DONE=$((_N_BED_DONE+1))
+             else
+               _STALE="${_STALE} ${_S}"
+             fi
+           fi
          done ;;
   "INS") for _S in "${!INS_SIZES[@]}"; do
            _N_BED_TOTAL=$((_N_BED_TOTAL+1))
-           [[ -s "${BEDS}/hack_ins_${_S}.bed" ]] && _N_BED_DONE=$((_N_BED_DONE+1))
+           _BED="${BEDS}/hack_ins_${_S}.bed"
+           if [[ -s "${_BED}" ]]; then
+             if _check_bed_start "${_BED}" "${SV_START_0}"; then
+               _N_BED_DONE=$((_N_BED_DONE+1))
+             else
+               _STALE="${_STALE} ${_S}"
+             fi
+           fi
          done ;;
 esac
+if [[ -n "${_STALE}" ]]; then
+  echo "ERROR: existing BED file(s) for size(s)${_STALE} do not match current" >&2
+  echo "       SV_START_0=${SV_START_0} in config.  Refusing to overwrite silently." >&2
+  echo "       Delete the stale BEDs (under ${BEDS}) and all downstream artifacts" >&2
+  echo "       (haplotypes_var, reads_var, vcf, results) for this rep, then re-run." >&2
+  exit 1
+fi
 if [[ "${_N_BED_TOTAL}" -gt 0 && "${_N_BED_DONE}" -ge "${_N_BED_TOTAL}" ]]; then
-  echo "[$(date)] Skipping 01_make_beds — all ${_N_BED_TOTAL} BED files already exist in ${BEDS}"
+  echo "[$(date)] Skipping 01_make_beds — all ${_N_BED_TOTAL} BED files already exist at POS=${SV_START_0} in ${BEDS}"
   exit 0
 fi
-echo "[$(date)] Found ${_N_BED_DONE}/${_N_BED_TOTAL} BED files — building missing ones."
+echo "[$(date)] Found ${_N_BED_DONE}/${_N_BED_TOTAL} BED files at POS=${SV_START_0} — building missing ones."
 
 source "$(mamba info --base)/etc/profile.d/conda.sh" && conda activate pang
 
@@ -52,11 +81,15 @@ case "${SV_TYPE}" in
       LEN=${DEL_SIZES[$SIZE]}
       END=$((SV_START_0 + LEN))
       BED="${BEDS}/hack_del_${SIZE}.bed"
-      # If a BED with these parameters already exists, reuse it
-      if [[ -s "${BED}" ]]; then
+      # Reuse only if the existing BED encodes the current SV_START_0
+      if [[ -s "${BED}" ]] && _check_bed_start "${BED}" "${SV_START_0}"; then
         echo "[$(date)]   Reusing existing BED for ${SIZE}: ${BED}"
       else
-        echo "[$(date)]   Writing BED for ${SIZE}: ${BED}"
+        if [[ -s "${BED}" ]]; then
+          echo "[$(date)]   Overwriting stale BED for ${SIZE}: ${BED}"
+        else
+          echo "[$(date)]   Writing BED for ${SIZE}: ${BED}"
+        fi
         echo -e "${CHROM}\t${SV_START_0}\t${END}\tdeletion\tNone\t0" > "${BED}"
       fi
     done
