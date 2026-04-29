@@ -71,7 +71,7 @@ from pathlib import Path
 
 # ── Fixed paths ───────────────────────────────────────────────────────────────
 WORK     = "/home/tbellagio/scratch/visor_freqk"
-FREQK    = "/home/tbellagio/scratch/pang/test_freqk/freqk/target/release/freqk"
+FREQK    = "/home/tbellagio/scratch/bin/freqk"
 FASTA    = Path(WORK) / "data/reference/Chr1.fa"
 CHROM    = "Chr1"
 REGISTRY = Path(WORK) / "data/positions_registry.tsv"

@@ -70,4 +70,4 @@ READS=${READS_VAR}                                           # alias for 05_freq
 VCF_DIR=${WORK}/data/vcf/del/${POS_LABEL}/var
 RESULTS=${WORK}/results/del/${POS_LABEL}/var
 
-FREQK=/home/tbellagio/scratch/pang/test_freqk/freqk/target/release/freqk
+FREQK=/home/tbellagio/scratch/bin/freqk

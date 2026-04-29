@@ -95,6 +95,7 @@ case "${SV_TYPE}" in
       COUNTS_BY_ALLELE=${BASE_DIR}/var_del_${SIZE}_${RUN_TAG}.counts_by_allele.k${K}.tsv
       RAW_COUNTS=${BASE_DIR}/var_del_${SIZE}_${RUN_TAG}.raw_kmer_counts.k${K}.tsv
       AF_OUT=${BASE_DIR}/var_del_${SIZE}_${RUN_TAG}.allele_frequencies.k${K}.tsv
+      RUNTIMES=${BASE_DIR}/var_del_${SIZE}_${RUN_TAG}.runtimes.k${K}.tsv
 
       echo
       echo "==== DEL ${SIZE}  (RUN_TAG=${RUN_TAG}) ===="
@@ -117,9 +118,24 @@ case "${SV_TYPE}" in
              echo "       Expected r1.fq and r2.fq — did 03_run_shorts_var.sh succeed?" >&2
              exit 1; }
 
+      # Per-step runtime TSV (sibling of AF output): method size step elapsed_s cached
+      printf "method\tsize\tstep\telapsed_s\tcached\n" > "${RUNTIMES}.tmp"
+      mv -f "${RUNTIMES}.tmp" "${RUNTIMES}"
+
+      step() {
+        local label="$1"; shift
+        local _t0=${SECONDS}
+        echo
+        echo "[$(date)] === ${label} (DEL ${SIZE}) ==="
+        echo "+ $*"
+        "$@"
+        local _el=$(( SECONDS - _t0 ))
+        printf "freqk\t%s\t%s\t%d\t0\n" "${SIZE}" "${label}" "${_el}" >> "${RUNTIMES}"
+      }
+
       # --- index ---
-      echo "[$(date)] Building freqk index (k=${K}) for DEL ${SIZE}"
-      "${FREQK}" index --fasta "${REF}" --vcf "${VCF}" --output "${INDEX}" --kmer "${K}"
+      step "index" \
+        "${FREQK}" index --fasta "${REF}" --vcf "${VCF}" --output "${INDEX}" --kmer "${K}"
       ls -lh "${INDEX}"
 
       # --- combine reads ---
@@ -127,19 +143,14 @@ case "${SV_TYPE}" in
       # same reads dir don't truncate the file while another job is reading it.
       if [[ ! -s "${READS_COMBINED}" ]]; then
         echo "[$(date)] Combining r1.fq + r2.fq → all.fq (${SIZE})"
+        _t0=${SECONDS}
         cat "${READS_DIR}/r1.fq" "${READS_DIR}/r2.fq" > "${READS_COMBINED}.tmp"
         mv -f "${READS_COMBINED}.tmp" "${READS_COMBINED}"
+        printf "freqk\t%s\tcombine_reads\t%d\t0\n" "${SIZE}" $(( SECONDS - _t0 )) >> "${RUNTIMES}"
       else
         echo "[$(date)] Reusing existing all.fq (${SIZE})"
+        printf "freqk\t%s\tcombine_reads\t0\t1\n" "${SIZE}" >> "${RUNTIMES}"
       fi
-
-      step() {
-        local label="$1"; shift
-        echo
-        echo "[$(date)] === ${label} (DEL ${SIZE}) ==="
-        echo "+ $*"
-        "$@"
-      }
 
       step "var-dedup" \
         "${FREQK}" var-dedup --index "${INDEX}" --output "${VAR_INDEX}"
