@@ -125,6 +125,19 @@ For freqk, the `count` step dominates (95–510 s depending on coverage; scales 
 
 For vg, the breakdown is dominated by `vg pack` and `vg giraffe` mapping (each ~30–45 % of wall time once the graph index is cached), with `vg call` ~10–20 % and `autoindex` once-per-rep.
 
+**Compute usage** (median per sbatch — covers 5 sizes × 1 freq, from `sacct`)
+
+| Coverage | Method | Wall (s) | CPU-s | Peak RSS (GB) | Cores | CPU eff |
+|----:|--------|---------:|------:|--------------:|------:|--------:|
+| 10× | freqk | 628 | 1,069 | 5.5 | 4 | 0.40 |
+| 10× | vg | 908 | 3,529 | 7.1 | 8 | 0.40 |
+| 20× | freqk | 1,051 | 1,924 | 8.3 | 4 | 0.50 |
+| 20× | vg | 1,481 | 6,472 | 11.6 | 8 | 0.50 |
+| 50× | freqk | 2,095 | 4,652 | 17.1 | 4 | 0.60 |
+| 50× | vg | 3,406 | 14,926 | 24.5 | 8 | 0.50 |
+
+`05b_vg_giraffe.sh` requests `--cpus-per-task=8` while `05_freqk_var.sh` requests `4`, so the wall-time gap (1.4–1.6×) underplays vg's CPU cost (~3×). Memory peak is ~30–50 % higher for vg. Neither method saturates its allocated cores — efficiency sits at 0.4–0.6 — meaning trimming `--cpus-per-task` would barely lengthen wall time.
+
 If you launch new coverage points or re-run the pipeline on combos that pre-date the runtime instrumentation (commit 4739c8e), `scripts/launch_freqk_runtime_backfill.py` re-runs step 05 with `FORCE_RUNTIME=1` so the per-step timing TSV gets regenerated alongside the (deterministic, unchanged) AF output.
 
 Plots emitted by the notebook (under `plots/`):
@@ -137,6 +150,8 @@ Plots emitted by the notebook (under `plots/`):
 - `freqk_vs_vg_paired_error.png` — |vg err| vs |freqk err| same combo
 - `freqk_vs_vg_runtime_total.png` — total wall time per combo (boxplots)
 - `freqk_vs_vg_runtime_vg_steps.png` — vg per-step breakdown
+- `freqk_vs_vg_compute_usage.png` — wall vs CPU-s vs MaxRSS, per sbatch
+- `freqk_vs_vg_cpu_efficiency.png` — CPU saturation per sbatch (0–1)
 
 ---
 
