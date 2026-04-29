@@ -103,9 +103,15 @@ case "${SV_TYPE}" in
       echo "     READS:    ${READS_DIR}"
       echo "     RESULTS:  ${BASE_DIR}"
 
-      if [[ -s "${AF_OUT}" ]]; then
+      # When FORCE_RUNTIME=1, bypass the AF-exists skip so the per-step
+      # timing TSV gets regenerated for combos that pre-date the runtime
+      # instrumentation.  Used by launch_freqk_runtime_backfill.py.
+      if [[ -s "${AF_OUT}" && "${FORCE_RUNTIME:-0}" != "1" ]]; then
         echo "[$(date)] Skipping DEL ${SIZE} — allele-frequency file already exists: ${AF_OUT}"
         continue
+      fi
+      if [[ "${FORCE_RUNTIME:-0}" == "1" && -s "${AF_OUT}" ]]; then
+        echo "[$(date)] FORCE_RUNTIME=1 — re-running DEL ${SIZE} to regenerate runtime TSV"
       fi
 
       # Preflight checks
