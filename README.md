@@ -108,28 +108,24 @@ python scripts/launch_benchmarks.py --rep-ids rep1 rep2 \
 
 `summaries/freqk_vs_vg_giraffe.ipynb` scans both methods' AF TSVs side-by-side, filters to (rep, coverage) cells where both methods have the full 5 sizes × 5 freqs grid, and partitions the comparison by coverage, SV size, and per-combo paired error.
 
-Current matched set (`rep1`–`rep10`, `k=31`):
+Current matched set (`rep1`–`rep10`, `k=31`): all 10 reps × 3 coverages × 5 sizes × 5 freqs = **750 paired combos**.
 
-| Coverage | Reps with full grid | Combos |
-|----------|---------------------|--------|
-| 10× | rep1 – rep10 (10) | 250 |
-| 20× | rep1 – rep10 (10) | 250 |
-| 50× | rep1, rep2, rep3, rep4, rep10 (5) | 125 |
+**Accuracy.** On combos where both methods detect the variant, vg giraffe's |estimate − truth| is closer to zero on **435/632 (~69 %)** of paired combos; freqk on 196 (1 tie).
 
-The cov=50× expansion is still in flight for `rep5`–`rep9`.
+**Detection.** freqk detects 100 % of matched combos. vg giraffe drops 14–23 % of combos at 10× and ~14 % at 20×–50× (returns NA when read support on the graph is too thin around the deletion breakpoints).
 
-**Accuracy.** On combos where both methods detect the variant, vg giraffe's |estimate − truth| is closer to zero on **357/529 (~67 %)** of paired combos; freqk on 171.
-
-**Detection.** freqk detects 100 % of matched combos. vg giraffe drops 8–20 % of combos at 10×–20× coverage (returns NA when read support on the graph is too thin), and 14–23 % at 50×.
-
-**Runtime (median seconds per combo, all 5 SV sizes)**
+**Runtime (median seconds per combo)**
 
 | Method | 10× | 20× | 50× |
 |--------|----:|----:|----:|
-| freqk (1 kb only — older combos lack timing TSVs) | 96 | 165 | 371 |
-| vg giraffe | 180–202 | 290–315 | 520–820 |
+| freqk | 114 – 133 | 194 – 218 | 358 – 444 |
+| vg giraffe | 180 – 203 | 292 – 315 | 683 – 821 |
+
+For freqk, the `count` step dominates (95–510 s depending on coverage; scales linearly with read volume); `ref-dedup` is ~35–47 s and other steps are negligible (<1 s).
 
 For vg, the breakdown is dominated by `vg pack` and `vg giraffe` mapping (each ~30–45 % of wall time once the graph index is cached), with `vg call` ~10–20 % and `autoindex` once-per-rep.
+
+If you launch new coverage points or re-run the pipeline on combos that pre-date the runtime instrumentation (commit 4739c8e), `scripts/launch_freqk_runtime_backfill.py` re-runs step 05 with `FORCE_RUNTIME=1` so the per-step timing TSV gets regenerated alongside the (deterministic, unchanged) AF output.
 
 Plots emitted by the notebook (under `plots/`):
 
