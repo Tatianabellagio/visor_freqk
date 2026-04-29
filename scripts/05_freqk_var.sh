@@ -40,11 +40,15 @@ for _SZ in "${!DEL_SIZES[@]}"; do
   _AF="${_BDIR}/var_del_${_SZ}_${_RTAG}.allele_frequencies.k${K}.tsv"
   [[ -s "${_AF}" ]] && _N_AF_DONE=$((_N_AF_DONE + 1))
 done
-if [[ "${_N_AF_TOTAL}" -gt 0 && "${_N_AF_DONE}" -ge "${_N_AF_TOTAL}" ]]; then
+if [[ "${_N_AF_TOTAL}" -gt 0 && "${_N_AF_DONE}" -ge "${_N_AF_TOTAL}" && "${FORCE_RUNTIME:-0}" != "1" ]]; then
   echo "[$(date)] Skipping 05_freqk_var — all ${_N_AF_TOTAL} allele-frequency files already exist"
   exit 0
 fi
-echo "[$(date)] Found ${_N_AF_DONE}/${_N_AF_TOTAL} allele-frequency files — running missing ones."
+if [[ "${FORCE_RUNTIME:-0}" == "1" ]]; then
+  echo "[$(date)] FORCE_RUNTIME=1 — re-running freqk on ${_N_AF_TOTAL} sizes to backfill runtime TSVs"
+else
+  echo "[$(date)] Found ${_N_AF_DONE}/${_N_AF_TOTAL} allele-frequency files — running missing ones."
+fi
 
 eval "$(conda shell.bash hook)"
 conda activate freqk_build
