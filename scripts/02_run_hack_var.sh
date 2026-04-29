@@ -171,8 +171,9 @@ case "${SV_TYPE}" in
 
         # Acquire per-sample lock (NFS-safe atomic mkdir).
         # Returns 0 = lock owned, 2 = concurrent job built it while we waited.
-        acquire_lock "${OUT_DIR}"
-        lock_rc=$?
+        # `|| lock_rc=$?` is required so `set -e` doesn't abort on rc=2.
+        lock_rc=0
+        acquire_lock "${OUT_DIR}" || lock_rc=$?
 
         if [[ "${lock_rc}" -eq 2 ]]; then
           # Another job finished while we were waiting — validate and move on
@@ -193,11 +194,24 @@ case "${SV_TYPE}" in
         echo "[$(date)] HACk DEL ${SIZE} (len=${LEN}) on sample ${SAMPLE}"
         VISOR HACk -g "${SAMPLE_FA}" -b "${BED}" -o "${OUT_DIR}"
 
-        # NFS metadata cache can lag; give the filesystem a moment to flush
-        # before validate_hap checks for the file.
-        sync; sleep 3
+        # NFS close-to-open is per-file; the directory listing on this host can
+        # remain cached for several seconds after VISOR's writer process closed.
+        # `ls` on the parent forces a readdir RPC, then poll a few times before
+        # giving up.  Without this, validate_hap can fire on a stale "not-found"
+        # view even though the FASTA is fully written and visible on other hosts.
+        sync
+        ls -la "${OUT_DIR}/" >/dev/null 2>&1 || true
+        valid=0
+        for _try in 1 2 3 4 5 6 7 8; do
+          if [[ -s "${OUT_DIR}/h1.fa" && -s "${OUT_DIR}/h1.fa.fai" ]] \
+             && [[ "$(wc -l < "${OUT_DIR}/h1.fa.fai")" -eq 1 ]]; then
+            valid=1; break
+          fi
+          sleep 3
+          ls -la "${OUT_DIR}/" >/dev/null 2>&1 || true
+        done
 
-        if validate_hap "${OUT_DIR}/h1.fa"; then
+        if [[ "${valid}" -eq 1 ]] && validate_hap "${OUT_DIR}/h1.fa"; then
           echo "[$(date)]   Done: ${OUT_DIR}/h1.fa"
           release_lock "${OUT_DIR}.lock"
         else
