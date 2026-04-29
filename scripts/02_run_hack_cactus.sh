@@ -39,7 +39,7 @@ for SIZE in "${!DEL_SIZES[@]}"; do
     BED=${BEDS}/del_${SIZE}.bed
     mkdir -p ${BEDS}
     SV_END_0=$((SV_START_0 + LEN))
-    echo -e "${CHROM}\t${SV_START_0}\t${SV_END_0}\tdeletion\tNone\tNone" > ${BED}
+    echo -e "${CHROM}\t${SV_START_0}\t${SV_END_0}\tdeletion\tNone\t0" > ${BED}
     echo "[$(date)] HACk BED for ${SIZE}: ${BED}"
 
     for SAMPLE in "${SV_SAMPLES[@]}"; do

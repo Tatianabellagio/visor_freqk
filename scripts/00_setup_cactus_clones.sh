@@ -47,7 +47,7 @@ CHR_LEN=$(awk -v c=${CHROM} '$1==c {print $2}' ${REF}.fai)
 if [ -z "${CHR_LEN}" ]; then
     echo "ERROR: chrom ${CHROM} not found in ${REF}.fai" >&2; exit 1
 fi
-echo -e "${CHROM}\t0\t${CHR_LEN}\t100.0" > ${REGION_BED_PATH}
+echo -e "${CHROM}\t1\t${CHR_LEN}\t100.0\t100.0" > ${REGION_BED_PATH}
 echo "[$(date)] SHORtS region BED:"
 cat ${REGION_BED_PATH}
 
