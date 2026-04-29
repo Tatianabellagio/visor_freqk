@@ -13,6 +13,8 @@
 # =============================================================================
 
 set -euo pipefail
+export PYTHONPATH="${PYTHONPATH:-}"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 CONFIG_FILE=${1:-"$(dirname "$0")/config_cactus_em.sh"}
 source "${CONFIG_FILE}"
 
