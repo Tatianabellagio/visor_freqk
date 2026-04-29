@@ -104,6 +104,44 @@ python scripts/launch_benchmarks.py --rep-ids rep1 rep2 \
     --sizes 1kb --coverage 50 --sv-freq 0.50 --n-samples 231
 ```
 
+### Results vs freqk
+
+`summaries/freqk_vs_vg_giraffe.ipynb` scans both methods' AF TSVs side-by-side, filters to (rep, coverage) cells where both methods have the full 5 sizes × 5 freqs grid, and partitions the comparison by coverage, SV size, and per-combo paired error.
+
+Current matched set (`rep1`–`rep10`, `k=31`):
+
+| Coverage | Reps with full grid | Combos |
+|----------|---------------------|--------|
+| 10× | rep1 – rep10 (10) | 250 |
+| 20× | rep1 – rep10 (10) | 250 |
+| 50× | rep1, rep2, rep3, rep4, rep10 (5) | 125 |
+
+The cov=50× expansion is still in flight for `rep5`–`rep9`.
+
+**Accuracy.** On combos where both methods detect the variant, vg giraffe's |estimate − truth| is closer to zero on **357/529 (~67 %)** of paired combos; freqk on 171.
+
+**Detection.** freqk detects 100 % of matched combos. vg giraffe drops 8–20 % of combos at 10×–20× coverage (returns NA when read support on the graph is too thin), and 14–23 % at 50×.
+
+**Runtime (median seconds per combo, all 5 SV sizes)**
+
+| Method | 10× | 20× | 50× |
+|--------|----:|----:|----:|
+| freqk (1 kb only — older combos lack timing TSVs) | 96 | 165 | 371 |
+| vg giraffe | 180–202 | 290–315 | 520–820 |
+
+For vg, the breakdown is dominated by `vg pack` and `vg giraffe` mapping (each ~30–45 % of wall time once the graph index is cached), with `vg call` ~10–20 % and `autoindex` once-per-rep.
+
+Plots emitted by the notebook (under `plots/`):
+
+- `freqk_vs_vg_pooled.png` — pooled true vs estimated AF
+- `freqk_vs_vg_by_coverage.png` — 2 methods × 3 coverages
+- `freqk_vs_vg_by_size.png` — 2 methods × 5 SV sizes
+- `freqk_vs_vg_r2_heatmap.png` — per-method R² + (vg − freqk) diff
+- `freqk_vs_vg_detection_rate.png` — detection bars by cov × size
+- `freqk_vs_vg_paired_error.png` — |vg err| vs |freqk err| same combo
+- `freqk_vs_vg_runtime_total.png` — total wall time per combo (boxplots)
+- `freqk_vs_vg_runtime_vg_steps.png` — vg per-step breakdown
+
 ---
 
 ## Checking pipeline timing
